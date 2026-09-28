@@ -12,6 +12,11 @@ updates:
   - package-ecosystem: "npm"
     directory: "/web"
     schedule: { interval: "weekly" }
+    ignore:
+      # Angular 22 requires typescript >=6.0 <6.1; take TypeScript majors with the
+      # Angular release that supports them rather than as standalone bumps.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
   - package-ecosystem: "npm"
     directory: "/cloudflare"
     schedule: { interval: "weekly" }
