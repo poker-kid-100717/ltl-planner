@@ -1,0 +1,40 @@
+:root { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; color: #e7f3ec; background: #06120f; }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; background: radial-gradient(circle at 20% 0%, #12352b 0, #06120f 40%, #030907 100%); }
+button { font: inherit; cursor: pointer; }
+.page { min-height: 100vh; padding-bottom: 70px; }
+.shell { width: min(1220px, calc(100% - 40px)); margin-inline: auto; }
+.hero { padding: 56px 0 30px; display: flex; justify-content: space-between; align-items: end; gap: 24px; border-bottom: 1px solid #24453a; }
+.hero h1 { margin: 7px 0 13px; font-size: clamp(42px, 7vw, 74px); line-height: .95; letter-spacing: -.055em; }
+.hero p { max-width: 760px; margin: 0; color: #9ab8aa; font-size: 18px; }
+.hero button { border: 0; border-radius: 12px; background: #6ce5ac; color: #03120b; font-weight: 900; padding: 13px 18px; white-space: nowrap; }
+.hero button:disabled { opacity: .55; cursor: wait; }
+.eyebrow { color: #75e9b4; font-size: 12px; letter-spacing: .15em; font-weight: 900; }
+.metrics { padding: 22px 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.metrics article, .panel, .truck-card { background: rgba(10, 29, 23, .88); border: 1px solid #23473a; border-radius: 17px; }
+.metrics article { padding: 18px; }
+.metrics span { display: block; color: #83a697; font-size: 13px; }
+.metrics strong { display: block; font-size: 29px; margin-top: 7px; }
+.layout { display: grid; grid-template-columns: 2fr 1fr; gap: 17px; }
+.panel { padding: 22px; min-width: 0; }
+.panel-head, .plan-heading, .truck-title { display: flex; justify-content: space-between; align-items: start; gap: 18px; }
+h2 { margin: 5px 0 0; font-size: 25px; }
+.panel-head > span { color: #789889; font-size: 13px; }
+.table { margin-top: 18px; display: grid; gap: 7px; }
+.row { display: grid; grid-template-columns: 1.1fr 1.65fr .9fr .4fr; gap: 14px; align-items: center; padding: 12px; border-radius: 11px; background: #081a15; border: 1px solid #18392d; }
+.row.header { color: #709283; background: transparent; border: 0; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.row small { display: block; color: #7d9b8e; margin-top: 3px; }.priority { color: #7cf0bb; font-weight: 900; }
+.yard-feed > p { color: #8fae9f; line-height: 1.55; }
+.ghost { border: 1px solid #315947; background: transparent; color: #cce6d9; border-radius: 9px; padding: 8px 11px; }
+.empty { color: #719183; padding: 20px 0; }
+.event { display: grid; gap: 4px; border-top: 1px solid #1b3b30; padding: 13px 0; }.event span { color: #75e9b4; }.event small { color: #7e9c8e; }
+.plan-section { margin-top: 18px; }
+.plan-heading { margin-bottom: 14px; align-items: end; }.plan-heading p { max-width: 650px; color: #86a697; margin: 0; }
+.truck-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.truck-card { padding: 18px; }.truck-title span { color: #75e9b4; font-size: 13px; font-weight: 800; }
+.bar { height: 8px; background: #10281f; border-radius: 99px; margin: 15px 0 8px; overflow: hidden; }.bar i { display: block; height: 100%; background: #63dba3; border-radius: inherit; }
+.truck-card p, .truck-card li { color: #89a899; font-size: 13px; }.truck-card ul { padding-left: 18px; line-height: 1.45; }
+.chips { display: flex; gap: 7px; flex-wrap: wrap; }.chips span { background: #15392b; border: 1px solid #275741; color: #bfe8d3; border-radius: 999px; padding: 5px 8px; font-size: 12px; }
+.unassigned { margin-top: 14px; border: 1px solid #6f4b28; background: #24180d; color: #f2c795; border-radius: 12px; padding: 13px; }
+@media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .truck-grid { grid-template-columns: 1fr; } .row { grid-template-columns: 1fr; gap: 5px; } .row.header { display: none; } }
+@media (max-width: 650px) { .shell { width: calc(100% - 24px); } .hero { align-items: start; flex-direction: column; } .metrics { grid-template-columns: 1fr; } }
