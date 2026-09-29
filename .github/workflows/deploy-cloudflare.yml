@@ -28,9 +28,11 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DEMO_RESET_TOKEN: ${{ secrets.DEMO_RESET_TOKEN }}
         run: |
-          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
-            echo "::notice::Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID as repository secrets to enable deployment."
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ] || [ -z "$DATABASE_URL" ] || [ -z "$DEMO_RESET_TOKEN" ]; then
+            echo "::notice::Add CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, DATABASE_URL and DEMO_RESET_TOKEN as repository secrets to enable deployment."
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
@@ -48,6 +50,8 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           APP_HOST: ${{ inputs.host || vars.APP_HOST }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DEMO_RESET_TOKEN: ${{ secrets.DEMO_RESET_TOKEN }}
           YARD_LTL_SIGNING_KEY: ${{ secrets.YARD_LTL_SIGNING_KEY }}
           ALVYS_CLIENT_ID: ${{ secrets.ALVYS_CLIENT_ID }}
           ALVYS_CLIENT_SECRET: ${{ secrets.ALVYS_CLIENT_SECRET }}
