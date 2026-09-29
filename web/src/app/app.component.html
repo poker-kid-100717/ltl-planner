@@ -1,54 +1,58 @@
 <main class="page">
   <header class="hero shell">
-    <div>
-      <span class="eyebrow">LOGISTICS PORTFOLIO / APP 02</span>
-      <h1>LTL Planner</h1>
-      <p>Constraint-aware planning with explanations, hard capacity rules, and a published integration contract for Yard Ops.</p>
-    </div>
-    <button type="button" (click)="buildPlan()" [disabled]="building()">{{ building() ? 'Building...' : 'Build plan' }}</button>
+    <div><span class="eyebrow">LOGISTICS PORTFOLIO / APP 02</span><h1>LTL Planner</h1><p>Persistent order and truck workflows with explainable capacity planning and a signed Yard Ops contract.</p></div>
+    <button type="button" (click)="buildPlan()" [disabled]="busy()">{{ busy() ? 'Working...' : 'Build draft plan' }}</button>
   </header>
 
+  @if (message()) { <section class="shell"><div class="empty">{{ message() }}</div></section> }
+
   <section class="shell metrics">
-    <article><span>Orders ready</span><strong>{{ orders().length }}</strong></article>
-    <article><span>Truck profiles</span><strong>{{ trucks().length }}</strong></article>
-    <article><span>Yard events received</span><strong>{{ yardEvents().length }}</strong></article>
+    <article><span>Open orders</span><strong>{{ orders().length }}</strong></article>
+    <article><span>Active trucks</span><strong>{{ trucks().length }}</strong></article>
+    <article><span>Persisted plans</span><strong>{{ plans().length }}</strong></article>
+    <article><span>Yard events</span><strong>{{ yardEvents().length }}</strong></article>
   </section>
 
   <section class="shell layout">
     <article class="panel orders">
-      <div class="panel-head"><div><span class="eyebrow">INPUT</span><h2>Shipment queue</h2></div><span>{{ orders().length }} orders</span></div>
+      <div class="panel-head"><div><span class="eyebrow">SELECT FREIGHT</span><h2>Shipment queue</h2></div><span>{{ selectedOrders().size || 'All' }} selected</span></div>
       <div class="table">
-        <div class="row header"><span>Order</span><span>Route</span><span>Cap.</span><span>Priority</span></div>
+        <div class="row header"><span>Use</span><span>Order / route</span><span>Capacity</span><span>Priority</span></div>
         @for (order of orders(); track order.id) {
           <div class="row">
-            <span><strong>{{ order.id }}</strong><small>{{ order.customer }}</small></span>
-            <span>{{ order.origin }} -> {{ order.destination }}</span>
-            <span>{{ order.pallets }} plt / {{ order.weight.toLocaleString() }} lb</span>
-            <span class="priority">{{ order.priority }}</span>
+            <span><input type="checkbox" [checked]="selected(selectedOrders(), order.id)" (change)="toggleOrder(order.id)"></span>
+            <span><strong>{{ order.id }}</strong><small>{{ order.customer }} · {{ order.origin }} → {{ order.destination }}</small></span>
+            <span>{{ order.pallets }} plt / {{ order.weight.toLocaleString() }} lb</span><span class="priority">{{ order.priority }}</span>
           </div>
         }
       </div>
     </article>
 
     <article class="panel yard-feed">
-      <div class="panel-head"><div><span class="eyebrow">SERVICE CONTRACT</span><h2>Yard event inbox</h2></div><button class="ghost" (click)="refreshYardEvents()">Refresh</button></div>
-      <p>Events are signed by Yard Ops, verified with HMAC-SHA256, and accepted idempotently by event ID.</p>
-      @if (yardEvents().length === 0) {
-        <div class="empty">No Yard events yet. Mark a trailer Ready in Yard Ops to exercise the integration.</div>
+      <div class="panel-head"><div><span class="eyebrow">SELECT CAPACITY</span><h2>Truck profiles</h2></div><span>{{ selectedTrucks().size || 'All' }} selected</span></div>
+      @for (truck of trucks(); track truck.id) {
+        <div class="event">
+          <strong><input type="checkbox" [checked]="selected(selectedTrucks(), truck.id)" (change)="toggleTruck(truck.id)"> {{ truck.id }}</strong>
+          <span>{{ truck.equipment }} · {{ truck.currentLocation }}</span>
+          <small>{{ truck.palletCapacity }} pallets / {{ truck.weightCapacity.toLocaleString() }} lb</small>
+        </div>
       }
-      @for (event of yardEvents(); track event.eventId) {
-        <div class="event"><strong>{{ event.eventType }}</strong><span>{{ event.trailerNumber }}</span><small>{{ event.details || 'No extra details' }}</small></div>
-      }
+      <div class="panel-head"><div><span class="eyebrow">SIGNED INTEGRATION</span><h2>Yard event inbox</h2></div><button class="ghost" (click)="refreshYardEvents()">Refresh</button></div>
+      @if (yardEvents().length === 0) { <div class="empty">No Yard events yet.</div> }
+      @for (event of yardEvents(); track event.eventId) { <div class="event"><strong>{{ event.eventType }}</strong><span>{{ event.trailerNumber }}</span><small>{{ event.details || 'No extra details' }}</small></div> }
     </article>
   </section>
 
   @if (plan(); as p) {
     <section class="shell plan-section">
-      <div class="plan-heading"><div><span class="eyebrow">OUTPUT</span><h2>Explainable plan</h2></div><p>{{ p.algorithm }}</p></div>
+      <div class="plan-heading">
+        <div><span class="eyebrow">PERSISTED {{ p.status.toUpperCase() }}</span><h2>Explainable plan</h2></div>
+        @if (p.status === 'Draft') { <div><button class="ghost" (click)="transition('discard')" [disabled]="busy()">Discard</button> <button (click)="transition('commit')" [disabled]="busy()">Commit plan</button></div> }
+      </div>
+      <p>{{ p.algorithm }}</p>
       <div class="truck-grid">
         @for (truck of p.trucks; track truck.truckId) {
-          <article class="truck-card">
-            <div class="truck-title"><strong>{{ truck.truckId }}</strong><span>{{ truck.utilization }}% utilized</span></div>
+          <article class="truck-card"><div class="truck-title"><strong>{{ truck.truckId }}</strong><span>{{ truck.utilization }}% utilized</span></div>
             <div class="bar"><i [style.width.%]="truck.utilization"></i></div>
             <p>{{ truck.usedPallets }}/{{ truck.palletCapacity }} pallets · {{ truck.usedWeight.toLocaleString() }}/{{ truck.weightCapacity.toLocaleString() }} lb</p>
             <div class="chips">@for (order of truck.orders; track order.id) { <span>{{ order.id }}</span> }</div>
@@ -57,7 +61,9 @@
         }
       </div>
       @if (p.unassignedOrders.length > 0) {
-        <div class="unassigned"><strong>Unassigned by hard constraints:</strong> {{ orderIds(p.unassignedOrders) }}</div>
+        <div class="unassigned"><strong>Unassigned by hard constraints</strong>
+          <ul>@for (item of p.unassignedOrders; track item.order.id) { <li>{{ item.order.id }} — {{ item.reason }}</li> }</ul>
+        </div>
       }
     </section>
   }
