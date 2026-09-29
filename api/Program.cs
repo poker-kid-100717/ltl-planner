@@ -36,14 +36,12 @@ app.UseExceptionHandler();
 app.UseRateLimiter();
 if (app.Environment.IsDevelopment()) app.MapOpenApi();
 
-var databaseReady = false;
 try
 {
     await using var scope = app.Services.CreateAsyncScope();
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await db.Database.MigrateAsync();
     await DbSeeder.SeedAsync(db);
-    databaseReady = true;
 }
 catch (Exception ex)
 {
@@ -65,7 +63,8 @@ orders.MapGet("", async (string? search, string? status, int? page, int? pageSiz
     if (!string.IsNullOrWhiteSpace(status)) q = q.Where(x => x.Status == status);
     var size = Math.Clamp(pageSize ?? 50, 1, 100);
     var skip = (Math.Max(page ?? 1, 1) - 1) * size;
-    return Results.Ok(await q.OrderBy(x => x.Id).Skip(skip).Take(size).Select(x => ToOrder(x)).ToListAsync());
+    var rows = await q.OrderBy(x => x.Id).Skip(skip).Take(size).ToListAsync();
+    return Results.Ok(rows.Select(ToOrder).ToArray());
 });
 orders.MapPost("", async (CreateOrderRequest r, AppDbContext db) =>
 {
@@ -98,7 +97,11 @@ orders.MapPost("/{id}/dispatch", async (string id, AppDbContext db) =>
 }).RequireRateLimiting("writes");
 
 var trucks = app.MapGroup("/api/trucks");
-trucks.MapGet("", async (AppDbContext db) => Results.Ok(await db.Trucks.AsNoTracking().OrderBy(x=>x.Id).Select(x=>ToTruck(x)).ToListAsync()));
+trucks.MapGet("", async (AppDbContext db) =>
+{
+    var rows = await db.Trucks.AsNoTracking().OrderBy(x=>x.Id).ToListAsync();
+    return Results.Ok(rows.Select(ToTruck).ToArray());
+});
 trucks.MapPost("", async (CreateTruckRequest r, AppDbContext db) =>
 {
     if(r.PalletCapacity<1 || r.PalletCapacity>60 || r.WeightCapacity<1000 || string.IsNullOrWhiteSpace(r.Equipment) || string.IsNullOrWhiteSpace(r.CurrentLocation))
