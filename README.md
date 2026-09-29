@@ -8,7 +8,9 @@ It is the standalone version of the LTL Planner from [logistics-portfolio-suite]
 
 ## Demonstrates
 
-- deterministic, explainable planning: hard constraints are enforced before any scoring
+- PostgreSQL persistence with EF Core 10, startup migrations, idempotent fictional seeding, and database readiness checks
+- persisted order/truck lifecycle and draft → committed/discarded planning workflows
+- deterministic, explainable planning: hard constraints are enforced before any scoring and every unassigned order gets a reason
 - .NET 10 minimal API with typed service boundaries
 - Angular 22 standalone planning workspace with signal-based state
 - optional read-only Alvys Loads Search through an OAuth 2.0 client-credentials adapter
@@ -35,7 +37,7 @@ ASPNETCORE_URLS=http://localhost:5102 dotnet run --project api
 cd web && npm install && npm start   # UI on http://localhost:4202; /api proxies to :5102
 ```
 
-Demo mode is the default and needs no credentials. To enable live, read-only Alvys reads set `ALVYS_MODE=Live`, `ALVYS_CLIENT_ID`, and `ALVYS_CLIENT_SECRET`. Credentials stay server-side; the Angular app never sees them.
+The application now requires PostgreSQL. Docker Compose starts PostgreSQL automatically. Production uses a Neon pooled `DATABASE_URL` with TLS. Demo mode is the default for the optional Alvys adapter and needs no Alvys credentials. To enable live, read-only Alvys reads set `ALVYS_MODE=Live`, `ALVYS_CLIENT_ID`, and `ALVYS_CLIENT_SECRET`. Credentials stay server-side; the Angular app never sees them.
 
 ## Tests
 
@@ -53,6 +55,8 @@ Repository **secrets**:
 | --- | --- | --- |
 | `CLOUDFLARE_API_TOKEN` | yes | Wrangler deploys |
 | `CLOUDFLARE_ACCOUNT_ID` | yes | Wrangler deploys |
+| `DATABASE_URL` | yes | Neon pooled PostgreSQL connection (`sslmode=require`) |
+| `DEMO_RESET_TOKEN` | yes | Protects the scheduled public-demo reset endpoint |
 | `YARD_LTL_SIGNING_KEY` | recommended | Verifies Yard Ops events. Must equal the key in the yard-ops repo. Generated per deploy when absent. |
 | `ALVYS_CLIENT_ID` / `ALVYS_CLIENT_SECRET` | no | Live, read-only Alvys mode |
 

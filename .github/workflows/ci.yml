@@ -22,6 +22,19 @@ jobs:
   backend:
     name: .NET 10 API and tests
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: ltl_planner
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ltl_planner"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      ConnectionStrings__Default: Host=localhost;Port=5432;Database=ltl_planner;Username=postgres;Password=postgres
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
@@ -69,4 +82,6 @@ jobs:
         env:
           VALIDATE_ONLY: "true"
           APP_HOST: ltl.example.com
+          DATABASE_URL: postgres://demo:demo@localhost:5432/ltl?sslmode=require
+          DEMO_RESET_TOKEN: dry-run-reset-token
           YARD_LTL_SIGNING_KEY: dry-run-signing-key

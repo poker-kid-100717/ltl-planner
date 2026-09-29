@@ -3,6 +3,7 @@
 ```mermaid
 flowchart LR
   WEB[Angular 22 UI] --> API[LTL Planner .NET 10 API]
+  API --> DB[(PostgreSQL / Neon)]
   API -->|read-only loads| ALVYS[Alvys Public API]
   YARD[Yard Ops API] -->|GET planning candidates| API
   YARD -->|signed outbox event| API
@@ -11,6 +12,12 @@ flowchart LR
 ## Boundary
 
 LTL Planner owns internal shipment planning, capacity validation, and explainable assignment results. It exposes a narrow, versioned integration contract to Yard Ops rather than sharing tables or domain entities.
+
+## Persistence and state rules
+
+Orders, trucks, plans, Yard events, and the Yard trailer read model are persisted through EF Core 10 to PostgreSQL. Mutable orders, trucks, and plans use PostgreSQL `xmin` optimistic concurrency. Startup migrations are attempted before seeding; `/health` is liveness and `/health/ready` reports database reachability.
+
+Order state: `Open -> Planned -> Dispatched`, with `Open -> Cancelled`. Only Open orders may be edited. Plan state: `Draft -> Committed|Discarded`. Commit is transactional and succeeds only when every order in the draft is still Open. Yard event IDs are unique and accepted idempotently; accepted events update the Yard trailer read model in the same transaction.
 
 ## Planning
 
@@ -43,4 +50,4 @@ Exposed under `/api/integrations/v1/`:
      LTL .NET 10 Container
 ```
 
-State is in-memory in this portfolio build so the demo is self-contained; the store boundaries are where a database would plug in.
+Operational state is durable in PostgreSQL/Neon. The Cloudflare Container is stateless and may sleep without losing orders, trucks, plans, Yard events, or the Yard trailer read model. A protected scheduled reset restores the fictional seed dataset for the public demo.
