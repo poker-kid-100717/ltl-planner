@@ -4,28 +4,11 @@
   "main": "worker/index.ts",
   "compatibility_date": "2026-09-26",
   "workers_dev": true,
-  "assets": {
-    "directory": "../web/dist/web/browser",
-    "binding": "ASSETS",
-    "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/health", "/health/*"]
-  },
-  "containers": [
-    {
-      "class_name": "LtlApi",
-      "image": "../api/Dockerfile",
-      "max_instances": 1,
-      "instance_type": "basic"
-    }
-  ],
-  "durable_objects": {
-    "bindings": [
-      { "name": "API", "class_name": "LtlApi" }
-    ]
-  },
-  "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["LtlApi"] }
-  ],
-  "secrets": { "required": ["YARD_LTL_SIGNING_KEY"] },
+  "assets": { "directory": "../web/dist/web/browser", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*", "/health", "/health/*"] },
+  "containers": [{ "class_name": "LtlApi", "image": "../api/Dockerfile", "max_instances": 1, "instance_type": "basic" }],
+  "durable_objects": { "bindings": [{ "name": "API", "class_name": "LtlApi" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["LtlApi"] }],
+  "triggers": { "crons": ["17 8 * * *"] },
+  "secrets": { "required": ["DATABASE_URL", "DEMO_RESET_TOKEN", "YARD_LTL_SIGNING_KEY"] },
   "observability": { "enabled": true }
 }
