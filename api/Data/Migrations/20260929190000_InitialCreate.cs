@@ -10,50 +10,50 @@ public sealed class InitialCreate : Migration
     protected override void Up(MigrationBuilder m)
     {
         m.CreateTable("plans", t => new {
-            Id=t.Column<Guid>("Id", nullable:false),
-            CreatedAt=t.Column<DateTimeOffset>("CreatedAt", nullable:false),
-            Status=t.Column<string>("Status", maxLength:20, nullable:false),
-            Algorithm=t.Column<string>("Algorithm", maxLength:240, nullable:false),
-            PayloadJson=t.Column<string>("PayloadJson", type:"jsonb", nullable:false)
+            Id=t.Column<Guid>( nullable:false),
+            CreatedAt=t.Column<DateTimeOffset>( nullable:false),
+            Status=t.Column<string>( maxLength:20, nullable:false),
+            Algorithm=t.Column<string>( maxLength:240, nullable:false),
+            PayloadJson=t.Column<string>( type:"jsonb", nullable:false)
         }, constraints:t => t.PrimaryKey("PK_plans", x => x.Id));
 
         m.CreateTable("shipment_orders", t => new {
-            Id=t.Column<string>("Id", maxLength:16, nullable:false),
-            Customer=t.Column<string>("Customer", maxLength:120, nullable:false),
-            Origin=t.Column<string>("Origin", maxLength:120, nullable:false),
-            Destination=t.Column<string>("Destination", maxLength:120, nullable:false),
-            Pallets=t.Column<int>("Pallets", nullable:false),
-            Weight=t.Column<int>("Weight", nullable:false),
-            Equipment=t.Column<string>("Equipment", maxLength:40, nullable:false),
-            Priority=t.Column<int>("Priority", nullable:false),
-            ReadyDate=t.Column<DateTimeOffset>("ReadyDate", nullable:false),
-            Status=t.Column<string>("Status", maxLength:20, nullable:false),
-            PlanId=t.Column<Guid>("PlanId", nullable:true)
+            Id=t.Column<string>( maxLength:16, nullable:false),
+            Customer=t.Column<string>( maxLength:120, nullable:false),
+            Origin=t.Column<string>( maxLength:120, nullable:false),
+            Destination=t.Column<string>( maxLength:120, nullable:false),
+            Pallets=t.Column<int>( nullable:false),
+            Weight=t.Column<int>( nullable:false),
+            Equipment=t.Column<string>( maxLength:40, nullable:false),
+            Priority=t.Column<int>( nullable:false),
+            ReadyDate=t.Column<DateTimeOffset>( nullable:false),
+            Status=t.Column<string>( maxLength:20, nullable:false),
+            PlanId=t.Column<Guid>( nullable:true)
         }, constraints:t => t.PrimaryKey("PK_shipment_orders", x => x.Id));
 
         m.CreateTable("trucks", t => new {
-            Id=t.Column<string>("Id", maxLength:16, nullable:false),
-            Equipment=t.Column<string>("Equipment", maxLength:40, nullable:false),
-            PalletCapacity=t.Column<int>("PalletCapacity", nullable:false),
-            WeightCapacity=t.Column<int>("WeightCapacity", nullable:false),
-            CurrentLocation=t.Column<string>("CurrentLocation", maxLength:120, nullable:false),
-            Active=t.Column<bool>("Active", nullable:false)
+            Id=t.Column<string>( maxLength:16, nullable:false),
+            Equipment=t.Column<string>( maxLength:40, nullable:false),
+            PalletCapacity=t.Column<int>( nullable:false),
+            WeightCapacity=t.Column<int>( nullable:false),
+            CurrentLocation=t.Column<string>( maxLength:120, nullable:false),
+            Active=t.Column<bool>( nullable:false)
         }, constraints:t => t.PrimaryKey("PK_trucks", x => x.Id));
 
         m.CreateTable("yard_events", t => new {
-            EventId=t.Column<Guid>("EventId", nullable:false),
-            EventType=t.Column<string>("EventType", maxLength:80, nullable:false),
-            TrailerNumber=t.Column<string>("TrailerNumber", maxLength:40, nullable:false),
-            OccurredAt=t.Column<DateTimeOffset>("OccurredAt", nullable:false),
-            Details=t.Column<string>("Details", maxLength:500, nullable:true),
-            ReceivedAt=t.Column<DateTimeOffset>("ReceivedAt", nullable:false),
-            Processed=t.Column<bool>("Processed", nullable:false)
+            EventId=t.Column<Guid>( nullable:false),
+            EventType=t.Column<string>( maxLength:80, nullable:false),
+            TrailerNumber=t.Column<string>( maxLength:40, nullable:false),
+            OccurredAt=t.Column<DateTimeOffset>( nullable:false),
+            Details=t.Column<string>( maxLength:500, nullable:true),
+            ReceivedAt=t.Column<DateTimeOffset>( nullable:false),
+            Processed=t.Column<bool>( nullable:false)
         }, constraints:t => t.PrimaryKey("PK_yard_events", x => x.EventId));
 
         m.CreateTable("yard_trailers", t => new {
-            TrailerNumber=t.Column<string>("TrailerNumber", maxLength:40, nullable:false),
-            Status=t.Column<string>("Status", maxLength:80, nullable:false),
-            LastEventAt=t.Column<DateTimeOffset>("LastEventAt", nullable:false)
+            TrailerNumber=t.Column<string>( maxLength:40, nullable:false),
+            Status=t.Column<string>( maxLength:80, nullable:false),
+            LastEventAt=t.Column<DateTimeOffset>( nullable:false)
         }, constraints:t => t.PrimaryKey("PK_yard_trailers", x => x.TrailerNumber));
 
         m.CreateIndex("IX_plans_CreatedAt","plans","CreatedAt");
