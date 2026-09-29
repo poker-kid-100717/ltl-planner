@@ -1,18 +1,30 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ltl_planner
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ltl_planner"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes: [ltl-postgres:/var/lib/postgresql/data]
   ltl-api:
     build: ./api
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Default: ${DATABASE_URL:-Host=postgres;Port=5432;Database=ltl_planner;Username=postgres;Password=postgres}
+      DemoResetToken: ${DEMO_RESET_TOKEN:-portfolio-dev-reset}
       Integration__YardSigningKey: ${YARD_LTL_SIGNING_KEY:-portfolio-dev-only-change-me}
       Alvys__Mode: ${ALVYS_MODE:-Demo}
       Alvys__ClientId: ${ALVYS_CLIENT_ID:-}
       Alvys__ClientSecret: ${ALVYS_CLIENT_SECRET:-}
-      Alvys__TokenUrl: ${ALVYS_TOKEN_URL:-https://auth.alvys.com/oauth/token}
-      Alvys__Audience: ${ALVYS_AUDIENCE:-https://api.alvys.com/public/}
-      Alvys__ApiBaseUrl: ${ALVYS_API_BASE_URL:-https://integrations.alvys.com/api/p/}
-      Alvys__LoadApiVersion: ${ALVYS_LOAD_API_VERSION:-v1}
     ports: ["5102:8080"]
-
   ltl-web:
     build:
       context: ./web
@@ -20,3 +32,5 @@ services:
         API_UPSTREAM: ltl-api:8080
     depends_on: [ltl-api]
     ports: ["4202:80"]
+volumes:
+  ltl-postgres:
