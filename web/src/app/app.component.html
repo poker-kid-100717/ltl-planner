@@ -1,64 +1,72 @@
-<main class="page">
-  <header class="hero shell">
-    <div>
-      <span class="eyebrow">LOGISTICS PORTFOLIO / APP 02</span>
-      <h1>LTL Planner</h1>
-      <p>Constraint-aware planning with explanations, hard capacity rules, and a published integration contract for Yard Ops.</p>
+<a class="skip-link" href="#main">Skip to content</a>
+<div class="app" [class.collapsed]="collapsed()" [class.nav-open]="mobileOpen()">
+  <nav class="sidebar" aria-label="Main">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">LP</span>
+      <span class="brand-name">LTL Planner</span>
+      <button type="button" class="icon-button close-nav" (click)="mobileOpen.set(false)" aria-label="Close menu"><app-icon name="close" /></button>
     </div>
-    <button type="button" (click)="buildPlan()" [disabled]="building()">{{ building() ? 'Building...' : 'Build plan' }}</button>
-  </header>
 
-  <section class="shell metrics">
-    <article><span>Orders ready</span><strong>{{ orders().length }}</strong></article>
-    <article><span>Truck profiles</span><strong>{{ trucks().length }}</strong></article>
-    <article><span>Yard events received</span><strong>{{ yardEvents().length }}</strong></article>
-  </section>
-
-  <section class="shell layout">
-    <article class="panel orders">
-      <div class="panel-head"><div><span class="eyebrow">INPUT</span><h2>Shipment queue</h2></div><span>{{ orders().length }} orders</span></div>
-      <div class="table">
-        <div class="row header"><span>Order</span><span>Route</span><span>Cap.</span><span>Priority</span></div>
-        @for (order of orders(); track order.id) {
-          <div class="row">
-            <span><strong>{{ order.id }}</strong><small>{{ order.customer }}</small></span>
-            <span>{{ order.origin }} -> {{ order.destination }}</span>
-            <span>{{ order.pallets }} plt / {{ order.weight.toLocaleString() }} lb</span>
-            <span class="priority">{{ order.priority }}</span>
-          </div>
-        }
+    @for (group of groups; track group.label) {
+      <div class="nav-group">
+        <h2 class="nav-heading">{{ group.label }}</h2>
+        <ul>
+          @for (item of group.items; track item.path) {
+            <li>
+              <a [routerLink]="item.path" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: !!item.exact }" ariaCurrentWhenActive="page"
+                 [attr.title]="collapsed() ? item.label : null" (click)="mobileOpen.set(false)">
+                <app-icon [name]="item.icon" /><span class="nav-label">{{ item.label }}</span>
+              </a>
+            </li>
+          }
+        </ul>
       </div>
-    </article>
+    }
 
-    <article class="panel yard-feed">
-      <div class="panel-head"><div><span class="eyebrow">SERVICE CONTRACT</span><h2>Yard event inbox</h2></div><button class="ghost" (click)="refreshYardEvents()">Refresh</button></div>
-      <p>Events are signed by Yard Ops, verified with HMAC-SHA256, and accepted idempotently by event ID.</p>
-      @if (yardEvents().length === 0) {
-        <div class="empty">No Yard events yet. Mark a trailer Ready in Yard Ops to exercise the integration.</div>
-      }
-      @for (event of yardEvents(); track event.eventId) {
-        <div class="event"><strong>{{ event.eventType }}</strong><span>{{ event.trailerNumber }}</span><small>{{ event.details || 'No extra details' }}</small></div>
-      }
-    </article>
-  </section>
+    <div class="nav-footer">
+      <a routerLink="/settings" routerLinkActive="active" ariaCurrentWhenActive="page" [attr.title]="collapsed() ? 'Settings' : null"
+         (click)="mobileOpen.set(false)">
+        <app-icon name="settings" /><span class="nav-label">Settings</span>
+      </a>
+      <button type="button" class="collapse-toggle" (click)="toggleCollapsed()" [attr.aria-label]="collapsed() ? 'Expand menu' : 'Collapse menu'"
+              [attr.aria-expanded]="!collapsed()">
+        <app-icon [name]="collapsed() ? 'expand' : 'collapse'" /><span class="nav-label">Collapse</span>
+      </button>
+    </div>
+  </nav>
+  <div class="scrim" (click)="mobileOpen.set(false)" aria-hidden="true"></div>
 
-  @if (plan(); as p) {
-    <section class="shell plan-section">
-      <div class="plan-heading"><div><span class="eyebrow">OUTPUT</span><h2>Explainable plan</h2></div><p>{{ p.algorithm }}</p></div>
-      <div class="truck-grid">
-        @for (truck of p.trucks; track truck.truckId) {
-          <article class="truck-card">
-            <div class="truck-title"><strong>{{ truck.truckId }}</strong><span>{{ truck.utilization }}% utilized</span></div>
-            <div class="bar"><i [style.width.%]="truck.utilization"></i></div>
-            <p>{{ truck.usedPallets }}/{{ truck.palletCapacity }} pallets · {{ truck.usedWeight.toLocaleString() }}/{{ truck.weightCapacity.toLocaleString() }} lb</p>
-            <div class="chips">@for (order of truck.orders; track order.id) { <span>{{ order.id }}</span> }</div>
-            <ul>@for (reason of truck.explanations; track reason) { <li>{{ reason }}</li> }</ul>
-          </article>
-        }
+  <div class="workspace">
+    <header class="topbar">
+      <button type="button" class="icon-button open-nav" (click)="mobileOpen.set(true)" aria-label="Open menu"><app-icon name="menu" /></button>
+      <span class="topbar-title">Explainable LTL planning</span>
+      <div class="topbar-actions">
+        <a class="button ghost" routerLink="/plans/new">Build a plan</a>
+        <div class="new-menu">
+          <button type="button" class="primary" (click)="newOpen.set(!newOpen())" aria-haspopup="menu" [attr.aria-expanded]="newOpen()">
+            <app-icon name="plus" /><span class="new-label">New</span>
+          </button>
+          @if (newOpen()) {
+            <ul class="menu" role="menu">
+              <li role="none"><button type="button" role="menuitem" (click)="create('order')">Order</button></li>
+              <li role="none"><button type="button" role="menuitem" (click)="create('truck')">Truck</button></li>
+            </ul>
+          }
+        </div>
       </div>
-      @if (p.unassignedOrders.length > 0) {
-        <div class="unassigned"><strong>Unassigned by hard constraints:</strong> {{ orderIds(p.unassignedOrders) }}</div>
+    </header>
+
+    <div class="demo-note" role="note">
+      Public demo with fictional data.
+      @if (session.meta(); as meta) {
+        @if (meta.storage.persistent) { Changes are saved and reset daily. } @else { Changes reset when the server restarts. }
       }
-    </section>
-  }
-</main>
+    </div>
+    @if (session.metaError()) { <div class="alert page-alert" role="alert">{{ session.metaError() }}</div> }
+
+    <main id="main" tabindex="-1">
+      <router-outlet />
+    </main>
+  </div>
+</div>
+<app-form-drawer />

@@ -1,18 +1,24 @@
-using System.Text.Json;
+using System.Threading.RateLimiting;
 using Microsoft.Extensions.Http.Resilience;
+using Portfolio.Ltl.Api.Data;
+using Portfolio.Ltl.Api.Endpoints;
 using Portfolio.Ltl.Api.Integrations.Alvys;
-using Portfolio.Ltl.Api.Integrations.Yard;
-using Portfolio.Ltl.Api.Models;
 using Portfolio.Ltl.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = 64 * 1024);
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
-builder.Services.Configure<AlvysOptions>(builder.Configuration.GetSection(AlvysOptions.Section));
-builder.Services.AddSingleton<LtlStore>();
+builder.Services.AddExceptionHandler<DatabaseExceptionHandler>();
+builder.Services.AddSingleton(TimeProvider.System);
+
+builder.Services.AddLtlDatabase(builder.Configuration);
+builder.Services.AddSingleton<DemoSeeder>();
+builder.Services.AddSingleton<DatabaseGate>();
 builder.Services.AddSingleton<PlannerService>();
-builder.Services.AddSingleton<YardEventInbox>();
+
+builder.Services.Configure<AlvysOptions>(builder.Configuration.GetSection(AlvysOptions.Section));
 builder.Services.AddSingleton<AlvysTokenProvider>();
 builder.Services.AddSingleton<IExternalLoadReader, AlvysLoadReader>();
 
@@ -30,69 +36,53 @@ builder.Services.AddHttpClient(AlvysLoadReader.ApiClient)
         options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(30);
     });
 
+// Anonymous public demo: limit writes per client (Cloudflare supplies the caller's IP).
+// Yard Ops' signed events are service-to-service traffic and are not counted.
+var writesPerMinute = builder.Configuration.GetValue("RateLimiting:WritesPerMinute", 30);
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+    {
+        if (HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method) ||
+            context.Request.Path.StartsWithSegments("/api/integrations"))
+            return RateLimitPartition.GetNoLimiter("unlimited");
+        var client = context.Request.Headers["CF-Connecting-IP"].FirstOrDefault()
+                     ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(client, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = writesPerMinute,
+            Window = TimeSpan.FromMinutes(1)
+        });
+    });
+});
+
 var app = builder.Build();
 app.UseExceptionHandler();
+app.UseRateLimiter();
 if (app.Environment.IsDevelopment()) app.MapOpenApi();
 
+await Database.InitializeAsync(app.Services);
+
 app.MapGet("/health", () => Results.Ok(new { status = "Healthy", service = "ltl-planner" }));
-app.MapGet("/api/orders", (LtlStore store) => Results.Ok(store.Orders));
-app.MapGet("/api/trucks", (LtlStore store) => Results.Ok(store.Trucks));
-app.MapGet("/api/plans", (LtlStore store) => Results.Ok(store.Plans.OrderByDescending(x => x.CreatedAt)));
-
-app.MapPost("/api/plans/build", (PlanBuildRequest request, PlannerService planner, LtlStore store) =>
+app.MapGet("/health/ready", async (DatabaseGate gate, DatabaseStatus database, CancellationToken ct) =>
 {
-    var plan = planner.Build(request.OrderIds, request.TruckIds);
-    store.AddPlan(plan);
-    return Results.Ok(plan);
+    var ready = await gate.EnsureReadyAsync(ct);
+    var body = new { status = ready ? "Ready" : "Degraded", database = new { database.Mode, database.Ready, database.Error } };
+    return ready ? Results.Ok(body) : Results.Json(body, statusCode: StatusCodes.Status503ServiceUnavailable);
 });
 
-app.MapGet("/api/integrations/v1/yard/candidates", (
-    string trailerNumber,
-    string? equipment,
-    int? maxPallets,
-    LtlStore store) =>
-{
-    var capacity = Math.Clamp(maxPallets ?? 26, 1, 60);
-    var items = store.Orders
-        .Where(o => !o.Assigned)
-        .Where(o => string.IsNullOrWhiteSpace(equipment) || o.Equipment.Equals(equipment, StringComparison.OrdinalIgnoreCase))
-        .Where(o => o.Pallets <= capacity)
-        .OrderByDescending(o => o.Priority)
-        .ThenByDescending(o => o.Pallets)
-        .Take(8)
-        .Select(o => new YardCandidate(o.Id, o.Customer, o.Origin, o.Destination, o.Pallets, o.Weight, o.Equipment,
-            $"Fits {trailerNumber} by declared equipment and pallet capacity; final truck/route validation stays in LTL."));
-    return Results.Ok(items);
-});
+var api = app.MapGroup("/api");
+api.MapPlatformEndpoints();
 
-app.MapPost("/api/integrations/v1/yard/events", async (
-    HttpRequest request,
-    IConfiguration configuration,
-    YardEventInbox inbox,
-    CancellationToken ct) =>
-{
-    using var reader = new StreamReader(request.Body);
-    var body = await reader.ReadToEndAsync();
-    var signature = request.Headers["X-Portfolio-Signature"].ToString();
-    var key = configuration["Integration:YardSigningKey"] ?? "";
+var data = api.MapGroup("").AddEndpointFilter(DatabaseGate.Filter);
+data.MapPlanningEndpoints();
+data.MapYardContract();
+data.MapYardViews();
 
-    if (!Signature.Verify(body, key, signature))
-        return Results.Unauthorized();
-
-    var evt = JsonSerializer.Deserialize<YardIntegrationEvent>(body, new JsonSerializerOptions(JsonSerializerDefaults.Web));
-    if (evt is null || evt.EventId == Guid.Empty || string.IsNullOrWhiteSpace(evt.TrailerNumber))
-        return Results.ValidationProblem(new Dictionary<string, string[]> { ["event"] = ["A valid eventId and trailerNumber are required."] });
-    if (evt.SchemaVersion != 1)
-        return Results.ValidationProblem(new Dictionary<string, string[]> { ["schemaVersion"] = ["Only Yard integration schema version 1 is supported."] });
-
-    var accepted = inbox.TryAccept(evt);
-    return Results.Ok(new { accepted, duplicate = !accepted, evt.EventId });
-});
-
-app.MapGet("/api/integrations/v1/yard/events", (YardEventInbox inbox) =>
-    Results.Ok(inbox.Events.OrderByDescending(x => x.OccurredAt)));
-
-app.MapGet("/api/alvys/loads", async (IExternalLoadReader loads, CancellationToken ct) =>
+api.MapGet("/alvys/loads", async (IExternalLoadReader loads, CancellationToken ct) =>
     Results.Ok(await loads.GetVisibleLoadsAsync(ct)));
 
 app.Run();
+
+public partial class Program;

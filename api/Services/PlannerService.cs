@@ -2,26 +2,30 @@ using Portfolio.Ltl.Api.Models;
 
 namespace Portfolio.Ltl.Api.Services;
 
-public sealed class PlannerService(LtlStore store)
+/// <summary>
+/// Deterministic, explainable best-fit planner. Hard constraints (equipment, pallets, weight) filter
+/// trucks before any scoring; every planned truck and every unplaced order carries a plain-language reason.
+/// </summary>
+public sealed class PlannerService(TimeProvider clock)
 {
-    public PlanResult Build(IReadOnlyList<string>? orderIds = null, IReadOnlyList<string>? truckIds = null)
+    public const string Algorithm =
+        "Explainable best-fit heuristic: equipment + hard pallet/weight constraints + origin affinity + remaining-capacity fit.";
+
+    public PlanResult Build(IReadOnlyList<ShipmentOrder> orders, IReadOnlyList<TruckProfile> trucks)
     {
-        var requestedOrders = Select(store.Orders, orderIds, x => x.Id)
-            .Where(x => !x.Assigned)
+        var queue = orders
             .OrderByDescending(x => x.Priority)
             .ThenByDescending(x => x.Pallets)
             .ThenByDescending(x => x.Weight)
+            .ThenBy(x => x.Id, StringComparer.Ordinal)
             .ToList();
-        var requestedTrucks = Select(store.Trucks, truckIds, x => x.Id).ToList();
 
-        var mutable = requestedTrucks.ToDictionary(
-            t => t.Id,
-            t => new TruckBuild(t, new List<ShipmentOrder>(), 0, 0));
-        var unassigned = new List<ShipmentOrder>();
+        var builds = trucks.Where(t => t.Active).OrderBy(t => t.Id, StringComparer.Ordinal).Select(t => new TruckBuild(t)).ToList();
+        var unassigned = new List<UnassignedOrder>();
 
-        foreach (var order in requestedOrders)
+        foreach (var order in queue)
         {
-            var best = mutable.Values
+            var best = builds
                 .Where(x => Compatible(x, order))
                 .OrderByDescending(x => Score(x, order))
                 .ThenBy(x => x.Truck.Id, StringComparer.Ordinal)
@@ -29,7 +33,7 @@ public sealed class PlannerService(LtlStore store)
 
             if (best is null)
             {
-                unassigned.Add(order);
+                unassigned.Add(new UnassignedOrder(order, WhyUnassigned(order, builds)));
                 continue;
             }
 
@@ -38,7 +42,7 @@ public sealed class PlannerService(LtlStore store)
             best.UsedWeight += order.Weight;
         }
 
-        var trucks = mutable.Values
+        var planned = builds
             .Where(x => x.Orders.Count > 0)
             .Select(x => new PlannedTruck(
                 x.Truck.Id,
@@ -53,17 +57,10 @@ public sealed class PlannerService(LtlStore store)
                     (decimal)x.UsedWeight / x.Truck.WeightCapacity) * 100m, 1),
                 Explain(x)))
             .OrderByDescending(x => x.Utilization)
+            .ThenBy(x => x.TruckId, StringComparer.Ordinal)
             .ToArray();
 
-        return new(Guid.NewGuid(), DateTimeOffset.UtcNow, trucks, unassigned,
-            "Explainable best-fit heuristic: equipment + hard pallet/weight constraints + origin affinity + remaining-capacity fit.");
-    }
-
-    private static IEnumerable<T> Select<T>(IReadOnlyList<T> values, IReadOnlyList<string>? ids, Func<T, string> id)
-    {
-        if (ids is null || ids.Count == 0) return values;
-        var selected = ids.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return values.Where(x => selected.Contains(id(x)));
+        return new(Guid.NewGuid(), clock.GetUtcNow(), planned, unassigned.Select(u => u.Order).ToArray(), Algorithm, unassigned);
     }
 
     private static bool Compatible(TruckBuild truck, ShipmentOrder order) =>
@@ -81,6 +78,21 @@ public sealed class PlannerService(LtlStore store)
         return order.Priority + originAffinity + palletFit + weightFit;
     }
 
+    private static string WhyUnassigned(ShipmentOrder order, IReadOnlyList<TruckBuild> builds)
+    {
+        var sameEquipment = builds.Where(b => b.Truck.Equipment.Equals(order.Equipment, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (sameEquipment.Count == 0)
+            return $"No active {order.Equipment} truck was selected for this plan.";
+
+        var largest = sameEquipment.OrderByDescending(b => b.Truck.PalletCapacity).ThenByDescending(b => b.Truck.WeightCapacity).First().Truck;
+        if (sameEquipment.All(b => order.Pallets > b.Truck.PalletCapacity || order.Weight > b.Truck.WeightCapacity))
+            return $"Too large for any {order.Equipment} truck: needs {order.Pallets} pallets / {order.Weight:n0} lb; " +
+                   $"the largest takes {largest.PalletCapacity} / {largest.WeightCapacity:n0} lb.";
+
+        return $"Every {order.Equipment} truck was already full with higher-priority orders " +
+               $"(needs {order.Pallets} pallets / {order.Weight:n0} lb).";
+    }
+
     private static IReadOnlyList<string> Explain(TruckBuild build)
     {
         var origins = build.Orders.Select(x => x.Origin).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
@@ -94,11 +106,11 @@ public sealed class PlannerService(LtlStore store)
         ];
     }
 
-    private sealed class TruckBuild(TruckProfile truck, List<ShipmentOrder> orders, int usedPallets, int usedWeight)
+    private sealed class TruckBuild(TruckProfile truck)
     {
         public TruckProfile Truck { get; } = truck;
-        public List<ShipmentOrder> Orders { get; } = orders;
-        public int UsedPallets { get; set; } = usedPallets;
-        public int UsedWeight { get; set; } = usedWeight;
+        public List<ShipmentOrder> Orders { get; } = [];
+        public int UsedPallets { get; set; }
+        public int UsedWeight { get; set; }
     }
 }
