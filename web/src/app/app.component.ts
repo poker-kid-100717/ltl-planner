@@ -1,49 +1,71 @@
-import { HttpClient } from '@angular/common/http';
-import { Component, OnInit, inject, signal } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
+import { Component, HostListener, OnInit, inject, signal } from '@angular/core';
+import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { filter } from 'rxjs';
+import { Actions } from './core/actions';
+import { Session } from './core/session';
+import { FormDrawer } from './shared/form-drawer';
+import { Icon } from './shared/icon';
 
-type Order = { id: string; customer: string; origin: string; destination: string; pallets: number; weight: number; equipment: string; priority: number; assigned: boolean };
-type Truck = { id: string; equipment: string; palletCapacity: number; weightCapacity: number; currentLocation: string };
-type PlannedTruck = { truckId: string; equipment: string; orders: Order[]; usedPallets: number; palletCapacity: number; usedWeight: number; weightCapacity: number; utilization: number; explanations: string[] };
-type Plan = { id: string; createdAt: string; trucks: PlannedTruck[]; unassignedOrders: Order[]; algorithm: string };
-type YardEvent = { eventId: string; eventType: string; trailerNumber: string; occurredAt: string; details?: string };
+interface NavItem { label: string; path: string; icon: string; exact?: boolean; }
+interface NavGroup { label: string; items: NavItem[]; }
 
-@Component({ selector: 'app-root', standalone: true, templateUrl: './app.component.html' })
+@Component({
+  selector: 'app-root',
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, Icon, FormDrawer],
+  templateUrl: './app.component.html'
+})
 export class AppComponent implements OnInit {
-  private readonly http = inject(HttpClient);
-  readonly orders = signal<Order[]>([]);
-  readonly trucks = signal<Truck[]>([]);
-  readonly plan = signal<Plan | null>(null);
-  readonly yardEvents = signal<YardEvent[]>([]);
-  readonly building = signal(false);
+  readonly session = inject(Session);
+  readonly actions = inject(Actions);
+  private readonly router = inject(Router);
 
-  async ngOnInit(): Promise<void> {
-    await Promise.all([this.refreshCore(), this.refreshYardEvents()]);
+  readonly groups: NavGroup[] = [
+    { label: 'Overview', items: [{ label: 'Dashboard', path: '/dashboard', icon: 'dashboard' }] },
+    { label: 'Planning', items: [
+      { label: 'Orders', path: '/orders', icon: 'order' },
+      { label: 'Trucks', path: '/trucks', icon: 'truck' },
+      { label: 'Plan Builder', path: '/plans/new', icon: 'plan' },
+      { label: 'Plans', path: '/plans', icon: 'history', exact: true }
+    ] },
+    { label: 'Yard', items: [
+      { label: 'Yard Feed', path: '/yard', icon: 'yard' },
+      { label: 'Loads', path: '/loads', icon: 'load' }
+    ] }
+  ];
+
+  readonly collapsed = signal(readFlag('ltl-planner.nav-collapsed'));
+  readonly mobileOpen = signal(false);
+  readonly newOpen = signal(false);
+
+  ngOnInit(): void {
+    void this.session.loadMeta();
+    this.router.events.pipe(filter(e => e instanceof NavigationEnd)).subscribe(() => {
+      this.mobileOpen.set(false);
+      this.newOpen.set(false);
+      document.getElementById('main')?.focus({ preventScroll: true });
+    });
   }
 
-  async refreshCore(): Promise<void> {
-    const [orders, trucks] = await Promise.all([
-      firstValueFrom(this.http.get<Order[]>('/api/orders')),
-      firstValueFrom(this.http.get<Truck[]>('/api/trucks'))
-    ]);
-    this.orders.set(orders);
-    this.trucks.set(trucks);
+  toggleCollapsed(): void {
+    this.collapsed.update(v => !v);
+    try { localStorage.setItem('ltl-planner.nav-collapsed', String(this.collapsed())); } catch { /* ignore */ }
   }
 
-  async buildPlan(): Promise<void> {
-    this.building.set(true);
-    try {
-      this.plan.set(await firstValueFrom(this.http.post<Plan>('/api/plans/build', { orderIds: [], truckIds: [] })));
-    } finally {
-      this.building.set(false);
-    }
+  create(kind: 'order' | 'truck'): void {
+    this.newOpen.set(false);
+    if (!this.session.meta()) return;
+    if (kind === 'order') this.actions.newOrder(); else this.actions.newTruck();
   }
 
-  async refreshYardEvents(): Promise<void> {
-    this.yardEvents.set(await firstValueFrom(this.http.get<YardEvent[]>('/api/integrations/v1/yard/events')));
-  }
+  @HostListener('document:keydown.escape')
+  escape(): void { this.newOpen.set(false); this.mobileOpen.set(false); }
 
-  orderIds(orders: Order[]): string {
-    return orders.map(order => order.id).join(', ');
+  @HostListener('document:click', ['$event'])
+  outside(event: MouseEvent): void {
+    if (!(event.target as HTMLElement).closest('.new-menu')) this.newOpen.set(false);
   }
+}
+
+function readFlag(key: string): boolean {
+  try { return localStorage.getItem(key) === 'true'; } catch { return false; }
 }

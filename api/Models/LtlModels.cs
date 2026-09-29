@@ -1,5 +1,6 @@
 namespace Portfolio.Ltl.Api.Models;
 
+/// <summary>An order as the API returns it. Assigned is kept for older clients: true once the order leaves Open.</summary>
 public sealed record ShipmentOrder(
     string Id,
     string Customer,
@@ -9,14 +10,19 @@ public sealed record ShipmentOrder(
     int Weight,
     string Equipment,
     int Priority,
-    bool Assigned = false);
+    bool Assigned = false,
+    string Status = "Open",
+    DateOnly? ReadyOn = null,
+    Guid? PlanId = null,
+    string? TruckId = null);
 
 public sealed record TruckProfile(
     string Id,
     string Equipment,
     int PalletCapacity,
     int WeightCapacity,
-    string CurrentLocation);
+    string CurrentLocation,
+    bool Active = true);
 
 public sealed record PlanBuildRequest(IReadOnlyList<string>? OrderIds, IReadOnlyList<string>? TruckIds);
 
@@ -31,12 +37,17 @@ public sealed record PlannedTruck(
     decimal Utilization,
     IReadOnlyList<string> Explanations);
 
+public sealed record UnassignedOrder(ShipmentOrder Order, string Reason);
+
 public sealed record PlanResult(
     Guid Id,
     DateTimeOffset CreatedAt,
     IReadOnlyList<PlannedTruck> Trucks,
     IReadOnlyList<ShipmentOrder> UnassignedOrders,
-    string Algorithm);
+    string Algorithm,
+    IReadOnlyList<UnassignedOrder>? Unassigned = null,
+    string Status = "Draft",
+    DateTimeOffset? DecidedAt = null);
 
 public sealed record YardCandidate(
     string OrderId,

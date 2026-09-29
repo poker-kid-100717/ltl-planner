@@ -49,5 +49,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           APP_HOST: ${{ inputs.host || vars.APP_HOST }}
           YARD_LTL_SIGNING_KEY: ${{ secrets.YARD_LTL_SIGNING_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DEMO_RESET_TOKEN: ${{ secrets.DEMO_RESET_TOKEN }}
           ALVYS_CLIENT_ID: ${{ secrets.ALVYS_CLIENT_ID }}
           ALVYS_CLIENT_SECRET: ${{ secrets.ALVYS_CLIENT_SECRET }}

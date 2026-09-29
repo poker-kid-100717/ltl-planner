@@ -1,8 +1,25 @@
 services:
+  ltl-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ltl
+      POSTGRES_USER: ltl
+      POSTGRES_PASSWORD: ltl-local-only
+    volumes: [ltl-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ltl -d ltl"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   ltl-api:
     build: ./api
+    depends_on:
+      ltl-db: { condition: service_healthy }
     environment:
       ASPNETCORE_URLS: http://+:8080
+      DATABASE_URL: ${DATABASE_URL:-postgres://ltl:ltl-local-only@ltl-db:5432/ltl}
+      Demo__ResetToken: ${DEMO_RESET_TOKEN:-}
       Integration__YardSigningKey: ${YARD_LTL_SIGNING_KEY:-portfolio-dev-only-change-me}
       Alvys__Mode: ${ALVYS_MODE:-Demo}
       Alvys__ClientId: ${ALVYS_CLIENT_ID:-}
@@ -20,3 +37,6 @@ services:
         API_UPSTREAM: ltl-api:8080
     depends_on: [ltl-api]
     ports: ["4202:80"]
+
+volumes:
+  ltl-data:

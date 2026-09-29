@@ -7,6 +7,9 @@
 #   APP_HOST              custom hostname (for example ltl.example.com). When empty the
 #                         Worker is served from its workers.dev URL only.
 #   YARD_LTL_SIGNING_KEY  shared HMAC key; must match the Yard Ops deployment.
+#   DATABASE_URL          PostgreSQL URL (for example a Neon pooled URL with sslmode=require). When
+#                         empty the API runs on a throwaway demo database that resets on restart.
+#   DEMO_RESET_TOKEN      enables the daily demo-data reset (and POST /api/admin/reset-demo).
 #                         A per-deployment key is generated when empty.
 #   ALVYS_CLIENT_ID / ALVYS_CLIENT_SECRET  enable live, read-only Alvys mode.
 #   VALIDATE_ONLY=true    build and run `wrangler deploy --dry-run` without contacting Cloudflare.
@@ -45,11 +48,17 @@ if (process.env.APP_HOST) {
 fs.writeFileSync(output, JSON.stringify(config, null, 2) + "\n");
 NODE
 
+if [ -z "${DATABASE_URL:-}" ]; then
+  echo "::notice::DATABASE_URL is not set; LTL Planner will run on a demo database that resets when the container restarts."
+fi
 SECRETS_FILE="$(mktemp)"
 trap 'rm -f "$SECRETS_FILE"' EXIT
 chmod 600 "$SECRETS_FILE"
 node > "$SECRETS_FILE" <<'NODE'
 const secrets = { YARD_LTL_SIGNING_KEY: process.env.YARD_LTL_SIGNING_KEY };
+for (const name of ["DATABASE_URL", "DEMO_RESET_TOKEN"]) {
+  if (process.env[name]) secrets[name] = process.env[name];
+}
 if (process.env.ALVYS_CLIENT_ID && process.env.ALVYS_CLIENT_SECRET) {
   secrets.ALVYS_CLIENT_ID = process.env.ALVYS_CLIENT_ID;
   secrets.ALVYS_CLIENT_SECRET = process.env.ALVYS_CLIENT_SECRET;
@@ -92,7 +101,10 @@ wait_for() {
 
 echo "==> Smoke testing $APP_URL"
 wait_for "$APP_URL/health" "Healthy"
+wait_for "$APP_URL/health/ready" "Ready"
 wait_for "$APP_URL/" "<app-root"
+wait_for "$APP_URL/plans/new" "<app-root"
+wait_for "$APP_URL/api/dashboard" "openOrders"
 wait_for "$APP_URL/api/integrations/v1/yard/candidates?trailerNumber=SMOKE&equipment=Dry%20Van&maxPallets=26" "\["
 
 echo "Deployed: $APP_URL"

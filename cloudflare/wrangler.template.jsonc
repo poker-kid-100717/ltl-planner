@@ -27,5 +27,6 @@
     { "tag": "v1", "new_sqlite_classes": ["LtlApi"] }
   ],
   "secrets": { "required": ["YARD_LTL_SIGNING_KEY"] },
+  "triggers": { "crons": ["23 8 * * *"] },
   "observability": { "enabled": true }
 }
