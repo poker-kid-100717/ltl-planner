@@ -6,7 +6,7 @@
 # Optional:
 #   APP_HOST              custom hostname (for example ltl.example.com). When empty the
 #                         Worker is served from its workers.dev URL only.
-#   YARD_LTL_SIGNING_KEY  shared HMAC key; must match the Yard Ops deployment.
+#   DATABASE_URL          required Neon pooled PostgreSQL URL\n#   DEMO_RESET_TOKEN      required token for the scheduled public-demo reset\n#   YARD_LTL_SIGNING_KEY  shared HMAC key; must match the Yard Ops deployment.
 #                         A per-deployment key is generated when empty.
 #   ALVYS_CLIENT_ID / ALVYS_CLIENT_SECRET  enable live, read-only Alvys mode.
 #   VALIDATE_ONLY=true    build and run `wrangler deploy --dry-run` without contacting Cloudflare.
@@ -26,7 +26,7 @@ if [ -z "${YARD_LTL_SIGNING_KEY:-}" ]; then
   YARD_LTL_SIGNING_KEY="$(openssl rand -hex 32)"
   echo "::notice::YARD_LTL_SIGNING_KEY is not set; generated a per-deployment key. Signed Yard events will be rejected until Yard Ops uses the same key."
 fi
-export YARD_LTL_SIGNING_KEY APP_HOST
+if [ "$VALIDATE_ONLY" != "true" ]; then\n  : "${DATABASE_URL:?DATABASE_URL is required}"\n  : "${DEMO_RESET_TOKEN:?DEMO_RESET_TOKEN is required}"\nfi\nDATABASE_URL="${DATABASE_URL:-postgres://demo:demo@localhost:5432/ltl?sslmode=require}"\nDEMO_RESET_TOKEN="${DEMO_RESET_TOKEN:-dry-run-reset-token}"\nexport DATABASE_URL DEMO_RESET_TOKEN YARD_LTL_SIGNING_KEY APP_HOST
 
 echo "==> Building Angular app"
 npm install --prefix "$ROOT/web"
@@ -49,7 +49,7 @@ SECRETS_FILE="$(mktemp)"
 trap 'rm -f "$SECRETS_FILE"' EXIT
 chmod 600 "$SECRETS_FILE"
 node > "$SECRETS_FILE" <<'NODE'
-const secrets = { YARD_LTL_SIGNING_KEY: process.env.YARD_LTL_SIGNING_KEY };
+const secrets = { DATABASE_URL: process.env.DATABASE_URL, DEMO_RESET_TOKEN: process.env.DEMO_RESET_TOKEN, YARD_LTL_SIGNING_KEY: process.env.YARD_LTL_SIGNING_KEY };
 if (process.env.ALVYS_CLIENT_ID && process.env.ALVYS_CLIENT_SECRET) {
   secrets.ALVYS_CLIENT_ID = process.env.ALVYS_CLIENT_ID;
   secrets.ALVYS_CLIENT_SECRET = process.env.ALVYS_CLIENT_SECRET;
