@@ -50,4 +50,4 @@ Exposed under `/api/integrations/v1/`:
      LTL .NET 10 Container
 ```
 
-State is in-memory in this portfolio build so the demo is self-contained; the store boundaries are where a database would plug in.
+Operational state is durable in PostgreSQL/Neon. The Cloudflare Container is stateless and may sleep without losing orders, trucks, plans, Yard events, or the Yard trailer read model. A protected scheduled reset restores the fictional seed dataset for the public demo.
