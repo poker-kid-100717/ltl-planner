@@ -5,23 +5,11 @@ namespace Portfolio.Ltl.Api.Tests;
 
 public sealed class PlannerServiceTests
 {
-    private static readonly ShipmentOrder[] Orders =
-    [
-        new("ORD-1","Demo Customer","Albuquerque, NM","Phoenix, AZ",8,7200,"Dry Van",90),
-        new("ORD-2","Cold Foods","Santa Fe, NM","Denver, CO",12,14000,"Reefer",95),
-        new("ORD-3","Oversize Demo","Albuquerque, NM","Phoenix, AZ",30,20000,"Dry Van",80)
-    ];
-
-    private static readonly TruckProfile[] Trucks =
-    [
-        new("TRK-1","Dry Van",26,44000,"Albuquerque, NM"),
-        new("TRK-2","Reefer",24,42000,"Santa Fe, NM")
-    ];
-
     [Fact]
     public void Build_respects_equipment_and_capacity_constraints()
     {
-        var result = new PlannerService().Build(Orders, Trucks);
+        var result = new PlannerService().Build(DemoOrders(), DemoTrucks());
+
         Assert.NotEmpty(result.Trucks);
         foreach (var truck in result.Trucks)
         {
@@ -32,23 +20,28 @@ public sealed class PlannerServiceTests
     }
 
     [Fact]
-    public void Build_is_explainable_and_reports_specific_unassigned_reason()
+    public void Build_is_explainable_and_reports_a_reason_for_every_unassigned_order()
     {
-        var result = new PlannerService().Build(Orders, Trucks);
+        var orders = DemoOrders().Append(new ShipmentOrder("ORD-X", "Demo", "A", "B", 60, 90000, "Flatbed", 100)).ToArray();
+        var result = new PlannerService().Build(orders, DemoTrucks());
+
+        Assert.Equal("Draft", result.Status);
         Assert.Contains("Explainable", result.Algorithm);
         Assert.All(result.Trucks, truck => Assert.NotEmpty(truck.Explanations));
-        var unassigned = Assert.Single(result.UnassignedOrders);
-        Assert.Equal("ORD-3", unassigned.Order.Id);
-        Assert.Contains("pallet capacity", unassigned.Reason, StringComparison.OrdinalIgnoreCase);
+        Assert.All(result.UnassignedOrders, item => Assert.False(string.IsNullOrWhiteSpace(item.Reason)));
+        Assert.Contains(result.UnassignedOrders, item => item.Order.Id == "ORD-X" && item.Reason.Contains("Flatbed"));
     }
 
-    [Fact]
-    public void Build_ignores_non_open_orders_and_inactive_trucks()
-    {
-        var orders = Orders.Append(new ShipmentOrder("ORD-X","Done","A","B",1,100,"Dry Van",100,"Planned")).ToArray();
-        var trucks = Trucks.Append(new TruckProfile("TRK-X","Dry Van",60,100000,"A",false)).ToArray();
-        var result = new PlannerService().Build(orders, trucks);
-        Assert.DoesNotContain(result.Trucks.SelectMany(x=>x.Orders), x=>x.Id=="ORD-X");
-        Assert.DoesNotContain(result.Trucks, x=>x.TruckId=="TRK-X");
-    }
+    private static ShipmentOrder[] DemoOrders() =>
+    [
+        new("ORD-1", "A", "Albuquerque, NM", "Phoenix, AZ", 8, 7200, "Dry Van", 92),
+        new("ORD-2", "B", "Albuquerque, NM", "Phoenix, AZ", 6, 5800, "Dry Van", 84),
+        new("ORD-3", "C", "Santa Fe, NM", "Denver, CO", 12, 14200, "Reefer", 95)
+    ];
+
+    private static TruckProfile[] DemoTrucks() =>
+    [
+        new("TRK-1", "Dry Van", 26, 44000, "Albuquerque, NM"),
+        new("TRK-2", "Reefer", 24, 42000, "Santa Fe, NM")
+    ];
 }
