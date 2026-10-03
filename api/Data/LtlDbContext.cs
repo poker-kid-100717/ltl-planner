@@ -1,8 +1,8 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Design;
 
 namespace Portfolio.Ltl.Api.Data;
 
+/// <summary>EF Core model for the SQLite demo store (created from the model; Neo4j is the persistent store).</summary>
 public sealed class LtlDbContext(DbContextOptions<LtlDbContext> options) : DbContext(options)
 {
     public DbSet<Order> Orders => Set<Order>();
@@ -56,13 +56,4 @@ public sealed class LtlDbContext(DbContextOptions<LtlDbContext> options) : DbCon
             e.Property(x => x.LastEventType).HasMaxLength(60);
         });
     }
-}
-
-/// <summary>Used by `dotnet ef migrations add`; migrations target PostgreSQL.</summary>
-public sealed class DesignTimeFactory : IDesignTimeDbContextFactory<LtlDbContext>
-{
-    public LtlDbContext CreateDbContext(string[] args) =>
-        new(new DbContextOptionsBuilder<LtlDbContext>()
-            .UseNpgsql("Host=localhost;Database=ltl;Username=ltl;Password=design-time")
-            .Options);
 }

@@ -12,7 +12,7 @@ import { Session } from '../core/session';
         <section class="card">
           <h2>Data storage</h2>
           <p><span class="badge" [attr.data-tone]="meta.storage.persistent ? 'good' : 'warn'">{{ meta.storage.mode }}</span></p>
-          <p class="muted">{{ meta.storage.persistent ? 'Changes are saved to PostgreSQL.'
+          <p class="muted">{{ meta.storage.persistent ? 'Changes are saved to the Neo4j graph database.'
             : 'No database is configured, so the app uses a temporary demo database that resets when the server restarts.' }}</p>
           <p class="muted">Demo reset: {{ meta.demoReset.scheduled ? meta.demoReset.schedule : 'not scheduled' }}. A reset restores orders and trucks; Yard events are kept.</p>
         </section>
@@ -32,7 +32,7 @@ import { Session } from '../core/session';
         </section>
         <section class="card wide">
           <h2>About this app</h2>
-          <p class="muted">A clean-room portfolio LTL planner built with .NET 10, EF Core, PostgreSQL and Angular 22, hosted on Cloudflare Workers and Containers.
+          <p class="muted">A clean-room portfolio LTL planner built with .NET 10, Neo4j and Angular 22, hosted on Cloudflare Workers and Containers.
             All data is fictional. It is not modelled on any employer's product and contains no employer code, data or screens.</p>
         </section>
       </div>

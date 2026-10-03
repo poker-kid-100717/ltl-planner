@@ -10,8 +10,8 @@ using Portfolio.Ltl.Api.Data;
 namespace Portfolio.Ltl.Api.Tests;
 
 /// <summary>
-/// Runs the real API. Uses a throwaway SQLite file by default; set TEST_DATABASE_URL to run the
-/// same tests against PostgreSQL (CI does both). Each factory starts from freshly seeded data.
+/// Runs the real API. Uses a throwaway SQLite file by default; set TEST_DATABASE_URL to a Neo4j URL
+/// (bolt://neo4j:password@localhost:7687) to run the same tests against Neo4j (CI does both). Each factory starts from freshly seeded data.
 /// </summary>
 public class ApiFactory : WebApplicationFactory<Program>
 {
@@ -28,15 +28,14 @@ public class ApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("RateLimiting:WritesPerMinute", WritesPerMinute.ToString());
         builder.UseSetting("Demo:ResetToken", ResetToken ?? "");
         builder.UseSetting("Integration:YardSigningKey", SigningKey);
-        var postgres = Environment.GetEnvironmentVariable("TEST_DATABASE_URL");
-        if (!string.IsNullOrWhiteSpace(postgres)) builder.UseSetting("ConnectionStrings:Default", postgres);
+        var neo4j = Environment.GetEnvironmentVariable("TEST_DATABASE_URL");
+        if (!string.IsNullOrWhiteSpace(neo4j)) builder.UseSetting("ConnectionStrings:Default", neo4j);
     }
 
     public async Task ResetAsync()
     {
         using var scope = Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<LtlDbContext>();
-        await scope.ServiceProvider.GetRequiredService<DemoSeeder>().ResetAsync(db, CancellationToken.None);
+        await scope.ServiceProvider.GetRequiredService<ILtlStore>().ResetDemoAsync(CancellationToken.None);
     }
 
     protected override void Dispose(bool disposing)

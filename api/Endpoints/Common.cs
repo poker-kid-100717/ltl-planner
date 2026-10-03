@@ -1,12 +1,10 @@
-using System.Data.Common;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
+using Neo4j.Driver;
 using Portfolio.Ltl.Api.Data;
 
 namespace Portfolio.Ltl.Api.Endpoints;
-
-public sealed record Paged<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize);
 
 public static class Paging
 {
@@ -100,7 +98,7 @@ public static class Http
     public static string Lane(string origin, string destination) => $"{origin} → {destination}";
 }
 
-/// <summary>Maps database outages to 503 and write races to 409, both as ProblemDetails.</summary>
+/// <summary>Maps database outages to 503 and write races to 409 (EF Core or Neo4j), both as ProblemDetails.</summary>
 public sealed class DatabaseExceptionHandler(IProblemDetailsService problems, ILogger<DatabaseExceptionHandler> logger) : IExceptionHandler
 {
     public async ValueTask<bool> TryHandleAsync(HttpContext context, Exception exception, CancellationToken ct)
@@ -109,7 +107,8 @@ public sealed class DatabaseExceptionHandler(IProblemDetailsService problems, IL
         {
             DbUpdateConcurrencyException => (409, "The record was changed by someone else. Reload and try again."),
             DbUpdateException => (409, "The change conflicts with existing data."),
-            DbException or TimeoutException => (503, "The database is unavailable. Try again shortly."),
+            ClientException { Code: "Neo.ClientError.Schema.ConstraintValidationFailed" } => (409, "The change conflicts with existing data."),
+            _ when Database.IsUnavailable(exception) => (503, "The database is unavailable. Try again shortly."),
             _ => null
         };
         if (mapped is null) return false;

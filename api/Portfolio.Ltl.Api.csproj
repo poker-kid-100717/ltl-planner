@@ -13,7 +13,7 @@
     </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.12" />
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="10.10.0" />
-    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageReference Include="Neo4j.Driver" Version="6.3.0" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Portfolio.Ltl.Api.Tests" />

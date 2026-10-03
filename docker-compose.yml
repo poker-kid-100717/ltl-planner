@@ -1,16 +1,15 @@
 services:
   ltl-db:
-    image: postgres:16-alpine
+    image: neo4j:5.26-community
     environment:
-      POSTGRES_DB: ltl
-      POSTGRES_USER: ltl
-      POSTGRES_PASSWORD: ltl-local-only
-    volumes: [ltl-data:/var/lib/postgresql/data]
+      NEO4J_AUTH: neo4j/ltl-local-only
+    volumes: [ltl-data:/data]
+    ports: ["7474:7474"]   # Neo4j Browser at http://localhost:7474 (neo4j / ltl-local-only)
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ltl -d ltl"]
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
       interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 30
 
   ltl-api:
     build: ./api
@@ -18,7 +17,7 @@ services:
       ltl-db: { condition: service_healthy }
     environment:
       ASPNETCORE_URLS: http://+:8080
-      DATABASE_URL: ${DATABASE_URL:-postgres://ltl:ltl-local-only@ltl-db:5432/ltl}
+      DATABASE_URL: ${DATABASE_URL:-bolt://neo4j:ltl-local-only@ltl-db:7687}
       Demo__ResetToken: ${DEMO_RESET_TOKEN:-}
       Integration__YardSigningKey: ${YARD_LTL_SIGNING_KEY:-portfolio-dev-only-change-me}
       Alvys__Mode: ${ALVYS_MODE:-Demo}

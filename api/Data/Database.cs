@@ -1,6 +1,6 @@
 using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
-using Npgsql;
+using Neo4j.Driver;
 
 namespace Portfolio.Ltl.Api.Data;
 
@@ -10,17 +10,18 @@ public sealed class DatabaseStatus
     public required string Mode { get; init; }
     public bool Ready { get; set; }
     public string? Error { get; set; }
-    public bool Persistent => Mode == Database.PostgresMode;
+    public bool Persistent => Mode == Database.Neo4jMode;
 }
 
 public static class Database
 {
-    public const string PostgresMode = "PostgreSQL";
+    public const string Neo4jMode = "Neo4j";
     public const string DemoMode = "Demo (SQLite, resets on restart)";
 
     /// <summary>
-    /// PostgreSQL when ConnectionStrings:Default or DATABASE_URL is set (a Neon URL works as-is);
-    /// otherwise a throwaway SQLite file so the demo runs with no database configured.
+    /// Neo4j when ConnectionStrings:Default or DATABASE_URL is a neo4j:// or bolt:// URL (an AuraDB
+    /// neo4j+s://user:password@host URL works as-is); otherwise a throwaway SQLite file so the demo runs
+    /// with no database configured.
     /// </summary>
     public static DatabaseStatus AddLtlDatabase(this IServiceCollection services, IConfiguration config)
     {
@@ -29,14 +30,16 @@ public static class Database
 
         if (!string.IsNullOrWhiteSpace(configured))
         {
-            var connectionString = ToNpgsql(configured);
-            // No retrying execution strategy: several writes use explicit transactions.
-            services.AddDbContext<LtlDbContext>(o => o.UseNpgsql(connectionString));
-            return Register(services, new DatabaseStatus { Mode = PostgresMode });
+            if (!Neo4jConnection.IsNeo4jUrl(configured))
+                throw new InvalidOperationException("DATABASE_URL must be a Neo4j URL, for example neo4j+s://neo4j:<password>@<id>.databases.neo4j.io.");
+            services.AddSingleton(new Neo4jConnection(configured));
+            services.AddScoped<ILtlStore, Neo4jLtlStore>();
+            return Register(services, new DatabaseStatus { Mode = Neo4jMode });
         }
 
         var path = config["Demo:SqlitePath"] ?? Path.Combine(Path.GetTempPath(), "ltl-planner-demo.db");
         services.AddDbContext<LtlDbContext>(o => o.UseSqlite($"Data Source={path};Default Timeout=10"));
+        services.AddScoped<ILtlStore, SqliteLtlStore>();
         return Register(services, new DatabaseStatus { Mode = DemoMode });
     }
 
@@ -46,44 +49,9 @@ public static class Database
         return status;
     }
 
-    /// <summary>Accepts either an Npgsql connection string or a postgres:// URL.</summary>
-    public static string ToNpgsql(string value)
-    {
-        if (!value.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) &&
-            !value.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
-        {
-            return value;
-        }
-
-        var uri = new Uri(value);
-        var user = uri.UserInfo.Split(':', 2);
-        var builder = new NpgsqlConnectionStringBuilder
-        {
-            Host = uri.Host,
-            Port = uri.IsDefaultPort || uri.Port <= 0 ? 5432 : uri.Port,
-            Database = Uri.UnescapeDataString(uri.AbsolutePath.TrimStart('/')),
-            Username = Uri.UnescapeDataString(user[0]),
-            Password = user.Length > 1 ? Uri.UnescapeDataString(user[1]) : null
-        };
-
-        foreach (var pair in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var parts = pair.Split('=', 2);
-            var key = Uri.UnescapeDataString(parts[0]).ToLowerInvariant();
-            var setting = parts.Length > 1 ? Uri.UnescapeDataString(parts[1]) : "";
-            switch (key)
-            {
-                case "sslmode":
-                    builder.SslMode = Enum.Parse<SslMode>(setting.Replace("-", ""), ignoreCase: true);
-                    break;
-                case "channel_binding":
-                    builder.ChannelBinding = Enum.Parse<ChannelBinding>(setting, ignoreCase: true);
-                    break;
-            }
-        }
-
-        return builder.ConnectionString;
-    }
+    /// <summary>True for errors that mean the database cannot be reached right now.</summary>
+    public static bool IsUnavailable(Exception ex) =>
+        ex is DbException or TimeoutException or ServiceUnavailableException or SessionExpiredException or AuthenticationException;
 
     /// <summary>
     /// Brings the schema up to date and seeds demo data into an empty database. Never throws:
@@ -95,27 +63,15 @@ public static class Database
         using var scope = services.CreateScope();
         var status = scope.ServiceProvider.GetRequiredService<DatabaseStatus>();
         var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Database");
-        var db = scope.ServiceProvider.GetRequiredService<LtlDbContext>();
-        var seeder = scope.ServiceProvider.GetRequiredService<DemoSeeder>();
 
         try
         {
-            if (status.Persistent)
-            {
-                await db.Database.MigrateAsync(ct);
-            }
-            else
-            {
-                await db.Database.EnsureDeletedAsync(ct);
-                await db.Database.EnsureCreatedAsync(ct);
-            }
-
-            if (!await db.Trucks.AnyAsync(ct)) await seeder.SeedAsync(db, ct);
+            await scope.ServiceProvider.GetRequiredService<ILtlStore>().InitializeAsync(ct);
             status.Ready = true;
             status.Error = null;
             logger.LogInformation("Database ready ({Mode}).", status.Mode);
         }
-        catch (Exception ex) when (ex is DbException or InvalidOperationException or TimeoutException)
+        catch (Exception ex) when (IsUnavailable(ex) || ex is InvalidOperationException)
         {
             status.Ready = false;
             status.Error = "The database could not be reached.";

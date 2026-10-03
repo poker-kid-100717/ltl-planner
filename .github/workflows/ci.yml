@@ -20,19 +20,17 @@ jobs:
       - run: bash -n scripts/cloudflare-deploy.sh
 
   backend:
-    name: .NET 10 API and tests (SQLite and PostgreSQL)
+    name: .NET 10 API and tests (SQLite and Neo4j)
     runs-on: ubuntu-latest
     services:
-      postgres:
-        image: postgres:16-alpine
+      neo4j:
+        image: neo4j:5.26-community
         env:
-          POSTGRES_DB: ltl_test
-          POSTGRES_USER: ltl
-          POSTGRES_PASSWORD: ltl-ci
-        ports: ['5432:5432']
+          NEO4J_AUTH: neo4j/ltl-ci-password
+        ports: ['7687:7687']
         options: >-
-          --health-cmd "pg_isready -U ltl -d ltl_test"
-          --health-interval 5s --health-timeout 3s --health-retries 10
+          --health-cmd "wget -q --spider http://localhost:7474 || exit 1"
+          --health-interval 5s --health-timeout 3s --health-retries 30
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
@@ -44,14 +42,10 @@ jobs:
       - run: dotnet build api/Portfolio.Ltl.Api.csproj -c Release --no-restore
       - name: Tests (SQLite demo store)
         run: dotnet test tests/Portfolio.Ltl.Api.Tests.csproj -c Release --no-restore
-      - name: Tests (PostgreSQL, with migrations)
+      - name: Tests (Neo4j graph store)
         run: dotnet test tests/Portfolio.Ltl.Api.Tests.csproj -c Release --no-restore
         env:
-          TEST_DATABASE_URL: postgres://ltl:ltl-ci@127.0.0.1:5432/ltl_test
-      - name: Migrations match the model
-        run: |
-          dotnet tool install --global dotnet-ef --version 10.0.12
-          dotnet ef migrations has-pending-model-changes --project api
+          TEST_DATABASE_URL: bolt://neo4j:ltl-ci-password@127.0.0.1:7687
 
   frontend:
     name: Angular 22
@@ -90,5 +84,5 @@ jobs:
           VALIDATE_ONLY: "true"
           APP_HOST: ltl.example.com
           YARD_LTL_SIGNING_KEY: dry-run-signing-key
-          DATABASE_URL: postgres://dry-run:dry-run@example.com/ltl?sslmode=require
+          DATABASE_URL: neo4j+s://neo4j:dry-run@dry-run.databases.neo4j.io
           DEMO_RESET_TOKEN: dry-run-token

@@ -23,12 +23,13 @@ Rules the API enforces: only open orders are planned or edited; committing a dra
 ## Demonstrates
 
 - deterministic, explainable planning: hard constraints are enforced before any scoring, and every order the planner cannot place gets a reason
-- .NET 10 minimal API with EF Core 10 on PostgreSQL (migrations applied at startup), ProblemDetails validation and 409s for rule violations
+- .NET 10 minimal API on **Neo4j**: orders, trucks, lanes and equipment are a graph (`Order-SHIPS_FROM->Location`, `Truck-HAS_EQUIPMENT->Equipment`, `Plan-INCLUDES->Order-ASSIGNED_TO->Truck`), with uniqueness constraints created at startup, ProblemDetails validation and 409s for rule violations
+- a graph traversal endpoint, `GET /api/lanes`: open freight per lane and the active trucks already positioned at the origin with matching equipment
 - Angular 22 routed app: lazy-loaded pages, signals, one accessible drawer for create/edit forms, light and dark themes, phone-width layout
 - the Yard-facing v1 contract, unchanged: candidate lookup (`GET /api/integrations/v1/yard/candidates`) and HMAC-SHA256-verified, idempotent event ingestion (`POST /api/integrations/v1/yard/events`), now persisted
 - public-demo safeguards: per-client write rate limits (Yard's signed calls are exempt), body size limits, a daily reset from a Cloudflare cron trigger
 - optional read-only Alvys Loads Search through an OAuth 2.0 client-credentials adapter
-- integration tests against both SQLite and PostgreSQL in CI
+- the same integration tests against the Neo4j store and the SQLite demo store in CI
 - Cloudflare Workers + Containers hosting deployed from GitHub Actions
 
 The planner uses a deliberately understandable best-fit heuristic rather than a copied operational algorithm. See [docs/architecture.md](docs/architecture.md).
@@ -40,7 +41,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Compose starts PostgreSQL too; the API applies migrations and seeds fictional orders and trucks on first start.
+Compose starts Neo4j 5 too (browse the graph at http://localhost:7474, `neo4j` / `ltl-local-only`); the API creates its constraints and seeds fictional orders and trucks on first start.
 
 - UI: http://localhost:4202
 - API: http://localhost:5102 (health at `/health`)
@@ -58,7 +59,7 @@ Demo mode is the default and needs no credentials. To enable live, read-only Alv
 
 ```bash
 dotnet test tests/Portfolio.Ltl.Api.Tests.csproj                                   # SQLite
-TEST_DATABASE_URL=postgres://user:pass@localhost:5432/ltl_test dotnet test tests/Portfolio.Ltl.Api.Tests.csproj  # PostgreSQL
+TEST_DATABASE_URL=bolt://neo4j:password@localhost:7687 dotnet test tests/Portfolio.Ltl.Api.Tests.csproj  # Neo4j
 ```
 
 The integration tests start the real API and cover the planning rules and the Yard contract (shapes, signatures, idempotency, schema versions).
@@ -73,7 +74,7 @@ Repository **secrets**:
 | --- | --- | --- |
 | `CLOUDFLARE_API_TOKEN` | yes | Wrangler deploys |
 | `CLOUDFLARE_ACCOUNT_ID` | yes | Wrangler deploys |
-| `DATABASE_URL` | recommended | PostgreSQL URL, for example a Neon pooled URL ending in `?sslmode=require`. Without it the app runs on a demo database that resets whenever the container restarts. |
+| `DATABASE_URL` | recommended | Neo4j URL with credentials, for example an AuraDB Free instance: `neo4j+s://neo4j:<password>@<id>.databases.neo4j.io`. Without it the app runs on a demo database that resets whenever the container restarts. |
 | `DEMO_RESET_TOKEN` | recommended | Any random string. Enables the daily reset of demo orders and trucks (08:23 UTC); Yard events are kept. |
 | `YARD_LTL_SIGNING_KEY` | recommended | Verifies Yard Ops events. Must equal the key in the yard-ops repo. Generated per deploy when absent. |
 | `ALVYS_CLIENT_ID` / `ALVYS_CLIENT_SECRET` | no | Live, read-only Alvys mode |

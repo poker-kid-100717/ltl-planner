@@ -7,7 +7,8 @@
 #   APP_HOST              custom hostname (for example ltl.example.com). When empty the
 #                         Worker is served from its workers.dev URL only.
 #   YARD_LTL_SIGNING_KEY  shared HMAC key; must match the Yard Ops deployment.
-#   DATABASE_URL          PostgreSQL URL (for example a Neon pooled URL with sslmode=require). When
+#   DATABASE_URL          Neo4j URL with credentials (for example an AuraDB Free URL:
+#                         neo4j+s://neo4j:<password>@<id>.databases.neo4j.io). When
 #                         empty the API runs on a throwaway demo database that resets on restart.
 #   DEMO_RESET_TOKEN      enables the daily demo-data reset (and POST /api/admin/reset-demo).
 #                         A per-deployment key is generated when empty.

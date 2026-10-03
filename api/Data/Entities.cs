@@ -1,7 +1,7 @@
 namespace Portfolio.Ltl.Api.Data;
 
-// Persistence entities. Timestamps are UTC DateTime so PostgreSQL and the SQLite demo store
-// can both sort and filter on them in the database.
+// Domain records shared by the Neo4j store and the SQLite demo store. Timestamps are UTC DateTime
+// (ZonedDateTime in Neo4j) so both stores sort and filter on them natively.
 
 public sealed class Order
 {
@@ -33,7 +33,8 @@ public sealed class Truck
 
 /// <summary>
 /// A saved plan. The planner's full, explained result is stored as JSON: it is a snapshot of
-/// what the planner decided, read back as a whole and never queried by field.
+/// what the planner decided, read back as a whole and never queried by field. Once committed, the plan
+/// is also connected to its orders in the graph (Plan-INCLUDES->Order-ASSIGNED_TO->Truck).
 /// </summary>
 public sealed class Plan
 {

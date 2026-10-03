@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Microsoft.EntityFrameworkCore;
 using Portfolio.Ltl.Api.Data;
 using Portfolio.Ltl.Api.Models;
 using Portfolio.Ltl.Api.Services;
@@ -9,7 +8,6 @@ namespace Portfolio.Ltl.Api.Endpoints;
 public sealed record OrderRequest(string? Customer, string? Origin, string? Destination, int Pallets, int Weight,
     string? Equipment, int Priority, DateOnly? ReadyOn);
 public sealed record TruckRequest(string? Equipment, int PalletCapacity, int WeightCapacity, string? CurrentLocation, bool Active);
-public sealed record PlanSummary(Guid Id, DateTime CreatedAt, string Status, DateTime? DecidedAt, int TruckCount, int PlannedOrders, int UnassignedOrders);
 
 public static class PlanningEndpoints
 {
@@ -19,22 +17,18 @@ public static class PlanningEndpoints
     {
         var orders = api.MapGroup("/orders").WithTags("Orders");
         orders.MapGet("/", ListOrders);
-        orders.MapGet("/{id}", async (string id, LtlDbContext db, CancellationToken ct) =>
-            await db.Orders.AsNoTracking().SingleOrDefaultAsync(o => o.Id == id, ct) is { } o ? Results.Ok(ToDto(o)) : Http.NotFound("Order"));
+        orders.MapGet("/{id}", async (string id, ILtlStore store, CancellationToken ct) =>
+            await store.GetOrderAsync(id, ct) is { } o ? Results.Ok(ToDto(o)) : Http.NotFound("Order"));
         orders.MapPost("/", CreateOrder);
         orders.MapPut("/{id}", UpdateOrder);
-        orders.MapPost("/{id}/cancel", (string id, LtlDbContext db, TimeProvider clock, CancellationToken ct) =>
-            Move(id, OrderStatuses.Open, OrderStatuses.Cancelled, db, clock, ct));
-        orders.MapPost("/{id}/dispatch", (string id, LtlDbContext db, TimeProvider clock, CancellationToken ct) =>
-            Move(id, OrderStatuses.Planned, OrderStatuses.Dispatched, db, clock, ct));
+        orders.MapPost("/{id}/cancel", (string id, ILtlStore store, TimeProvider clock, CancellationToken ct) =>
+            Move(id, OrderStatuses.Open, OrderStatuses.Cancelled, store, clock, ct));
+        orders.MapPost("/{id}/dispatch", (string id, ILtlStore store, TimeProvider clock, CancellationToken ct) =>
+            Move(id, OrderStatuses.Planned, OrderStatuses.Dispatched, store, clock, ct));
 
         var trucks = api.MapGroup("/trucks").WithTags("Trucks");
-        trucks.MapGet("/", async (LtlDbContext db, bool? active, CancellationToken ct) =>
-        {
-            var query = db.Trucks.AsNoTracking();
-            if (active is { } a) query = query.Where(t => t.Active == a);
-            return Results.Ok((await query.OrderBy(t => t.Id).ToListAsync(ct)).Select(ToDto));
-        });
+        trucks.MapGet("/", async (ILtlStore store, bool? active, CancellationToken ct) =>
+            Results.Ok((await store.ListTrucksAsync(active, ct)).Select(ToDto)));
         trucks.MapPost("/", CreateTruck);
         trucks.MapPut("/{id}", UpdateTruck);
 
@@ -44,6 +38,8 @@ public static class PlanningEndpoints
         plans.MapPost("/build", BuildPlan);
         plans.MapPost("/{id:guid}/commit", CommitPlan);
         plans.MapPost("/{id:guid}/discard", DiscardPlan);
+
+        api.MapGet("/lanes", async (ILtlStore store, CancellationToken ct) => Results.Ok(await store.LanesAsync(ct))).WithTags("Home");
     }
 
     internal static ShipmentOrder ToDto(Order o) => new(o.Id, o.Customer, o.Origin, o.Destination, o.Pallets, o.Weight, o.Equipment,
@@ -53,19 +49,11 @@ public static class PlanningEndpoints
 
     // ---------- orders ----------
 
-    private static async Task<IResult> ListOrders(LtlDbContext db, string? status, string? equipment, string? search,
+    private static async Task<IResult> ListOrders(ILtlStore store, string? status, string? equipment, string? search,
         int? page, int? pageSize, CancellationToken ct)
     {
-        IQueryable<Order> query = db.Orders.AsNoTracking();
-        if (Http.Clean(status) is { } s) query = query.Where(o => o.Status == s);
-        if (Http.Clean(equipment) is { } e) query = query.Where(o => o.Equipment == e);
-        if (Http.Clean(search) is { } term)
-        {
-            var t = term.ToLower();
-            query = query.Where(o => o.Id.ToLower().Contains(t) || o.Customer.ToLower().Contains(t) ||
-                                     o.Origin.ToLower().Contains(t) || o.Destination.ToLower().Contains(t));
-        }
-        var paged = await query.OrderByDescending(o => o.Priority).ThenBy(o => o.Id).ToPagedAsync(page, pageSize, ct);
+        var (p, size) = Paging.Normalize(page, pageSize);
+        var paged = await store.ListOrdersAsync(new OrderQuery(Http.Clean(status), Http.Clean(equipment), Http.Clean(search), p, size), ct);
         return Results.Ok(new Paged<ShipmentOrder>(paged.Items.Select(ToDto).ToList(), paged.Total, paged.Page, paged.PageSize));
     }
 
@@ -96,40 +84,36 @@ public static class PlanningEndpoints
         o.UpdatedAt = now;
     }
 
-    private static async Task<IResult> CreateOrder(OrderRequest request, LtlDbContext db, TimeProvider clock, CancellationToken ct)
+    private static async Task<IResult> CreateOrder(OrderRequest request, ILtlStore store, TimeProvider clock, CancellationToken ct)
     {
         var checks = Validate(request);
         if (!checks.Ok) return checks.Problem();
-        var ids = await db.Orders.Select(o => o.Id).ToListAsync(ct);
+        var ids = await store.OrderIdsAsync(ct);
         var next = ids.Select(id => int.TryParse(id.AsSpan(4), out var n) ? n : 1000).DefaultIfEmpty(1000).Max() + 1;
         var now = clock.GetUtcNow().UtcDateTime;
         var order = new Order { Id = $"ORD-{next}", CreatedAt = now };
         Apply(order, request, now);
-        db.Orders.Add(order);
-        await db.SaveChangesAsync(ct);
+        await store.AddOrderAsync(order, ct);
         return Results.Created($"/api/orders/{order.Id}", ToDto(order));
     }
 
-    private static async Task<IResult> UpdateOrder(string id, OrderRequest request, LtlDbContext db, TimeProvider clock, CancellationToken ct)
+    private static async Task<IResult> UpdateOrder(string id, OrderRequest request, ILtlStore store, TimeProvider clock, CancellationToken ct)
     {
         var checks = Validate(request);
         if (!checks.Ok) return checks.Problem();
-        var order = await db.Orders.FindAsync([id], ct);
+        var order = await store.GetOrderAsync(id, ct);
         if (order is null) return Http.NotFound("Order");
         if (order.Status != OrderStatuses.Open) return Http.Conflict($"{order.Id} is {order.Status}; only open orders can be edited.");
         Apply(order, request, clock.GetUtcNow().UtcDateTime);
-        await db.SaveChangesAsync(ct);
+        await store.UpdateOrderAsync(order, ct);
         return Results.NoContent();
     }
 
-    private static async Task<IResult> Move(string id, string from, string to, LtlDbContext db, TimeProvider clock, CancellationToken ct)
+    private static async Task<IResult> Move(string id, string from, string to, ILtlStore store, TimeProvider clock, CancellationToken ct)
     {
-        var order = await db.Orders.FindAsync([id], ct);
-        if (order is null) return Http.NotFound("Order");
-        if (order.Status != from) return Http.Conflict($"{order.Id} is {order.Status}; only {from.ToLowerInvariant()} orders can be {to.ToLowerInvariant()}.");
-        order.Status = to;
-        order.UpdatedAt = clock.GetUtcNow().UtcDateTime;
-        await db.SaveChangesAsync(ct);
+        var moved = await store.TransitionOrderAsync(id, from, to, clock.GetUtcNow().UtcDateTime, ct);
+        if (!moved.Found) return Http.NotFound("Order");
+        if (!moved.Moved) return Http.Conflict($"{id} is {moved.Status}; only {from.ToLowerInvariant()} orders can be {to.ToLowerInvariant()}.");
         return Results.NoContent();
     }
 
@@ -141,29 +125,28 @@ public static class PlanningEndpoints
         .Range("weightCapacity", r.WeightCapacity, 1_000, Limits.MaxWeight)
         .Required("currentLocation", r.CurrentLocation, Limits.Place);
 
-    private static async Task<IResult> CreateTruck(TruckRequest request, LtlDbContext db, CancellationToken ct)
+    private static async Task<IResult> CreateTruck(TruckRequest request, ILtlStore store, CancellationToken ct)
     {
         var checks = Validate(request);
         if (!checks.Ok) return checks.Problem();
         var prefix = request.Equipment switch { EquipmentTypes.Reefer => 3, EquipmentTypes.Flatbed => 4, _ => 2 };
-        var ids = await db.Trucks.Select(t => t.Id).ToListAsync(ct);
+        var ids = await store.TruckIdsAsync(ct);
         var next = ids.Select(id => int.TryParse(id.AsSpan(4), out var n) ? n : 0).Where(n => n / 100 == prefix)
             .DefaultIfEmpty(prefix * 100).Max() + 1;
         var truck = new Truck { Id = $"TRK-{next}" };
         Apply(truck, request);
-        db.Trucks.Add(truck);
-        await db.SaveChangesAsync(ct);
+        await store.AddTruckAsync(truck, ct);
         return Results.Created($"/api/trucks/{truck.Id}", ToDto(truck));
     }
 
-    private static async Task<IResult> UpdateTruck(string id, TruckRequest request, LtlDbContext db, CancellationToken ct)
+    private static async Task<IResult> UpdateTruck(string id, TruckRequest request, ILtlStore store, CancellationToken ct)
     {
         var checks = Validate(request);
         if (!checks.Ok) return checks.Problem();
-        var truck = await db.Trucks.FindAsync([id], ct);
+        var truck = await store.GetTruckAsync(id, ct);
         if (truck is null) return Http.NotFound("Truck");
         Apply(truck, request);
-        await db.SaveChangesAsync(ct);
+        await store.UpdateTruckAsync(truck, ct);
         return Results.NoContent();
     }
 
@@ -178,13 +161,10 @@ public static class PlanningEndpoints
 
     // ---------- plans ----------
 
-    private static async Task<IResult> ListPlans(LtlDbContext db, string? status, int? page, int? pageSize, CancellationToken ct)
+    private static async Task<IResult> ListPlans(ILtlStore store, string? status, int? page, int? pageSize, CancellationToken ct)
     {
-        IQueryable<Plan> query = db.Plans.AsNoTracking();
-        if (Http.Clean(status) is { } s) query = query.Where(p => p.Status == s);
-        return Results.Ok(await query.OrderByDescending(p => p.CreatedAt)
-            .Select(p => new PlanSummary(p.Id, p.CreatedAt, p.Status, p.DecidedAt, p.TruckCount, p.PlannedOrders, p.UnassignedOrders))
-            .ToPagedAsync(page, pageSize, ct));
+        var (p, size) = Paging.Normalize(page, pageSize);
+        return Results.Ok(await store.ListPlansAsync(Http.Clean(status), p, size, ct));
     }
 
     internal static PlanResult Read(Plan plan)
@@ -197,30 +177,23 @@ public static class PlanningEndpoints
         };
     }
 
-    private static async Task<IResult> GetPlan(Guid id, LtlDbContext db, CancellationToken ct) =>
-        await db.Plans.AsNoTracking().SingleOrDefaultAsync(p => p.Id == id, ct) is { } plan ? Results.Ok(Read(plan)) : Http.NotFound("Plan");
+    private static async Task<IResult> GetPlan(Guid id, ILtlStore store, CancellationToken ct) =>
+        await store.GetPlanAsync(id, ct) is { } plan ? Results.Ok(Read(plan)) : Http.NotFound("Plan");
 
     /// <summary>Plans open orders onto active trucks and saves the result as a draft to review.</summary>
-    private static async Task<IResult> BuildPlan(PlanBuildRequest request, LtlDbContext db, PlannerService planner, CancellationToken ct)
+    private static async Task<IResult> BuildPlan(PlanBuildRequest request, ILtlStore store, PlannerService planner, CancellationToken ct)
     {
-        IQueryable<Order> orders = db.Orders.AsNoTracking().Where(o => o.Status == OrderStatuses.Open);
-        IQueryable<Truck> trucks = db.Trucks.AsNoTracking().Where(t => t.Active);
-        if (request.OrderIds is { Count: > 0 } orderIds) orders = orders.Where(o => orderIds.Contains(o.Id));
-        if (request.TruckIds is { Count: > 0 } truckIds) trucks = trucks.Where(t => truckIds.Contains(t.Id));
-
-        var orderList = (await orders.ToListAsync(ct)).Select(ToDto).ToList();
-        var truckList = (await trucks.ToListAsync(ct)).Select(ToDto).ToList();
-        if (orderList.Count == 0)
+        var (orders, trucks) = await store.PlanningInputAsync(request.OrderIds, request.TruckIds, ct);
+        if (orders.Count == 0)
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["orderIds"] = ["There are no open orders to plan."] });
 
-        var result = planner.Build(orderList, truckList);
-        db.Plans.Add(new Plan
+        var result = planner.Build(orders.Select(ToDto).ToList(), trucks.Select(ToDto).ToList());
+        await store.AddPlanAsync(new Plan
         {
             Id = result.Id, CreatedAt = result.CreatedAt.UtcDateTime, Status = PlanStatuses.Draft,
             TruckCount = result.Trucks.Count, PlannedOrders = result.Trucks.Sum(t => t.Orders.Count),
             UnassignedOrders = result.UnassignedOrders.Count, ResultJson = JsonSerializer.Serialize(result, Json)
-        });
-        await db.SaveChangesAsync(ct);
+        }, ct);
         return Results.Ok(result);
     }
 
@@ -228,61 +201,21 @@ public static class PlanningEndpoints
     /// Commits a draft in one transaction. Every order must still be open and unchanged since the draft
     /// was built, and every truck still active with the same capacity; otherwise nothing changes (409).
     /// </summary>
-    private static async Task<IResult> CommitPlan(Guid id, LtlDbContext db, TimeProvider clock, CancellationToken ct)
-    {
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
-        var plan = await db.Plans.SingleOrDefaultAsync(p => p.Id == id, ct);
-        if (plan is null) return Http.NotFound("Plan");
-        if (plan.Status != PlanStatuses.Draft) return Http.Conflict($"This plan is already {plan.Status.ToLowerInvariant()}.");
-
-        var result = Read(plan);
-        var planned = result.Trucks.SelectMany(t => t.Orders.Select(o => (Truck: t, Order: o))).ToList();
-        var orderIds = planned.Select(p => p.Order.Id).ToList();
-        var truckIds = result.Trucks.Select(t => t.TruckId).ToList();
-        var orders = await db.Orders.Where(o => orderIds.Contains(o.Id)).ToDictionaryAsync(o => o.Id, ct);
-        var trucks = await db.Trucks.Where(t => truckIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, ct);
-
-        var stale = new List<string>();
-        foreach (var (truck, snapshot) in planned)
+    private static async Task<IResult> CommitPlan(Guid id, ILtlStore store, TimeProvider clock, CancellationToken ct) =>
+        await store.CommitPlanAsync(id, clock.GetUtcNow().UtcDateTime, ct) switch
         {
-            if (!orders.TryGetValue(snapshot.Id, out var current)) stale.Add($"{snapshot.Id} no longer exists");
-            else if (current.Status != OrderStatuses.Open) stale.Add($"{snapshot.Id} is now {current.Status.ToLowerInvariant()}");
-            else if (current.Pallets != snapshot.Pallets || current.Weight != snapshot.Weight || current.Equipment != snapshot.Equipment)
-                stale.Add($"{snapshot.Id} was edited");
-        }
-        foreach (var truck in result.Trucks)
-        {
-            if (!trucks.TryGetValue(truck.TruckId, out var current) || !current.Active) stale.Add($"{truck.TruckId} is no longer active");
-            else if (current.PalletCapacity != truck.PalletCapacity || current.WeightCapacity != truck.WeightCapacity || current.Equipment != truck.Equipment)
-                stale.Add($"{truck.TruckId} was changed");
-        }
-        if (stale.Count > 0)
-            return Http.Conflict($"The plan is out of date ({string.Join("; ", stale)}). Build a new plan.");
+            { Outcome: PlanDecision.NotFound } => Http.NotFound("Plan"),
+            { Outcome: PlanDecision.AlreadyDecided, Plan: { } p } => Http.Conflict($"This plan is already {p.Status.ToLowerInvariant()}."),
+            { Outcome: PlanDecision.Stale, Detail: var detail } => Http.Conflict($"The plan is out of date ({detail}). Build a new plan."),
+            { Plan: { } p } => Results.Ok(Read(p)),
+            _ => throw new InvalidOperationException("Unexpected commit result.")
+        };
 
-        var now = clock.GetUtcNow().UtcDateTime;
-        foreach (var (truck, snapshot) in planned)
+    private static async Task<IResult> DiscardPlan(Guid id, ILtlStore store, TimeProvider clock, CancellationToken ct) =>
+        await store.DiscardPlanAsync(id, clock.GetUtcNow().UtcDateTime, ct) switch
         {
-            var order = orders[snapshot.Id];
-            order.Status = OrderStatuses.Planned;
-            order.PlanId = plan.Id;
-            order.TruckId = truck.TruckId;
-            order.UpdatedAt = now;
-        }
-        plan.Status = PlanStatuses.Committed;
-        plan.DecidedAt = now;
-        await db.SaveChangesAsync(ct);
-        await tx.CommitAsync(ct);
-        return Results.Ok(Read(plan));
-    }
-
-    private static async Task<IResult> DiscardPlan(Guid id, LtlDbContext db, TimeProvider clock, CancellationToken ct)
-    {
-        var plan = await db.Plans.SingleOrDefaultAsync(p => p.Id == id, ct);
-        if (plan is null) return Http.NotFound("Plan");
-        if (plan.Status != PlanStatuses.Draft) return Http.Conflict($"This plan is already {plan.Status.ToLowerInvariant()}.");
-        plan.Status = PlanStatuses.Discarded;
-        plan.DecidedAt = clock.GetUtcNow().UtcDateTime;
-        await db.SaveChangesAsync(ct);
-        return Results.NoContent();
-    }
+            { Outcome: PlanDecision.NotFound } => Http.NotFound("Plan"),
+            { Outcome: PlanDecision.AlreadyDecided, Plan: { } p } => Http.Conflict($"This plan is already {p.Status.ToLowerInvariant()}."),
+            _ => Results.NoContent()
+        };
 }

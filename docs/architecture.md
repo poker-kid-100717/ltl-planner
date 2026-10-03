@@ -3,7 +3,7 @@
 ```mermaid
 flowchart LR
   WEB[Angular 22 UI] --> API[LTL Planner .NET 10 API]
-  API --> DB[(PostgreSQL)]
+  API --> DB[(Neo4j)]
   API -->|read-only loads| ALVYS[Alvys Public API]
   YARD[Yard Ops API] -->|GET planning candidates| API
   YARD -->|signed outbox event| API
@@ -15,7 +15,19 @@ LTL Planner owns internal shipment planning, capacity validation, and explainabl
 
 ## Data model
 
-Orders, trucks, plans, Yard events and a per-trailer view, in one EF Core context (`api/Data`). Migrations target PostgreSQL and are applied at startup; without `DATABASE_URL` the API creates a throwaway SQLite database from the same model so the demo still runs.
+Planning data is a graph in Neo4j (`api/Data/Neo4jLtlStore.cs`), behind the `ILtlStore` interface the endpoints use:
+
+```
+(:Order)-[:SHIPS_FROM]->(:Location)<-[:LOCATED_AT]-(:Truck)
+(:Order)-[:SHIPS_TO]->(:Location)
+(:Order)-[:REQUIRES]->(:Equipment)<-[:HAS_EQUIPMENT]-(:Truck)
+(:Plan)-[:INCLUDES]->(:Order)-[:ASSIGNED_TO]->(:Truck)        once a plan is committed
+(:YardEvent)-[:ABOUT]->(:Trailer)
+```
+
+Uniqueness constraints (order, truck, plan, location, equipment, event id, trailer) are created at startup and do the job migrations and primary keys did before: they make Yard event ingestion idempotent and catch racing writes. Questions that cross entities are traversals: `GET /api/lanes` walks from each lane's origin `Location` through the required `Equipment` to the active `Truck`s already there. Writes that must see a consistent state (status moves, plan commits) lock the nodes they read first, so a commit checks and updates its orders and trucks in one transaction.
+
+Without `DATABASE_URL` the API uses a throwaway SQLite database (`SqliteLtlStore`, EF Core) so the demo still runs with nothing configured. The integration tests run against both stores.
 
 A plan stores the planner's full result (trucks, orders, explanations, unplaced orders and reasons) as a JSON snapshot. It is always read back whole, and the snapshot is what a commit is checked against.
 
@@ -56,4 +68,4 @@ Exposed under `/api/integrations/v1/`:
      LTL .NET 10 Container
 ```
 
-All state lives in PostgreSQL, so nothing is lost when the container sleeps after 10 minutes without traffic.
+All state lives in Neo4j, so nothing is lost when the container sleeps after 10 minutes without traffic.

@@ -126,6 +126,25 @@ public sealed class PlanningApiTests(ApiFactory factory) : ApiTest(factory)
     }
 
     [Fact]
+    public async Task LanesShowOpenFreightAndTheTrucksPositionedToServeIt()
+    {
+        var lanes = await GetJson("/api/lanes");
+        var denver = lanes.EnumerateArray().Single(l =>
+            l.GetProperty("origin").GetString() == "Albuquerque, NM" && l.GetProperty("destination").GetString() == "Denver, CO");
+        Assert.Equal(3, denver.GetProperty("openOrders").GetInt32());
+        Assert.Equal(24, denver.GetProperty("openPallets").GetInt32());
+        Assert.Equal(["Dry Van", "Reefer"], denver.GetProperty("equipment").EnumerateArray().Select(e => e.GetString()));
+        // TRK-302 (Reefer) is in Albuquerque but out of service; TRK-401 is there but a flatbed.
+        Assert.Equal(["TRK-201", "TRK-202"], denver.GetProperty("trucksAtOrigin").EnumerateArray().Select(e => e.GetString()));
+
+        // Lanes only count open freight.
+        await Post("/api/orders/ORD-1011/cancel");
+        var after = (await GetJson("/api/lanes")).EnumerateArray().Single(l =>
+            l.GetProperty("origin").GetString() == "Albuquerque, NM" && l.GetProperty("destination").GetString() == "Denver, CO");
+        Assert.Equal(2, after.GetProperty("openOrders").GetInt32());
+    }
+
+    [Fact]
     public async Task DemoResetRequiresTheToken()
     {
         await PostJson("/api/orders", NewOrder("Temporary Co"));
