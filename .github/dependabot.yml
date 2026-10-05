@@ -9,9 +9,16 @@ updates:
   - package-ecosystem: "nuget"
     directory: "/api"
     schedule: { interval: "weekly" }
+    groups:
+      api:
+        patterns: ["*"]
   - package-ecosystem: "npm"
     directory: "/web"
     schedule: { interval: "weekly" }
+    groups:
+      # Angular packages must move together; one-package bumps fail on peer ranges.
+      web:
+        patterns: ["*"]
     ignore:
       # Angular 22 requires typescript >=6.0 <6.1; take TypeScript majors with the
       # Angular release that supports them rather than as standalone bumps.
@@ -20,3 +27,6 @@ updates:
   - package-ecosystem: "npm"
     directory: "/cloudflare"
     schedule: { interval: "weekly" }
+    groups:
+      cloudflare:
+        patterns: ["*"]
