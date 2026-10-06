@@ -62,6 +62,13 @@ app.UseExceptionHandler();
 app.UseRateLimiter();
 if (app.Environment.IsDevelopment()) app.MapOpenApi();
 
+// `dotnet Portfolio.*.Api.dll migrate`: apply migrations and exit (used by the deploy pipeline).
+if (args.Contains("migrate", StringComparer.OrdinalIgnoreCase))
+{
+    Environment.ExitCode = await Database.MigrateAsync(app.Services) ? 0 : 1;
+    return;
+}
+
 await Database.InitializeAsync(app.Services);
 
 app.MapGet("/health", () => Results.Ok(new { status = "Healthy", service = "ltl-planner" }));

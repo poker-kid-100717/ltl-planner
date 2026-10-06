@@ -15,8 +15,8 @@ public sealed record YardTrailerDto(string TrailerNumber, string Status, string 
 public static class YardEndpoints
 {
     /// <summary>
-    /// The contract Yard Ops depends on. Paths, query parameters, the signature header, validation messages
-    /// and response shapes are unchanged from v1; only the storage behind them is new.
+    /// The contract Yard Ops depends on. Paths, query parameters, validation messages and response shapes are
+    /// unchanged from v1. Event signatures now also cover an X-Portfolio-Timestamp header (five-minute window).
     /// </summary>
     public static void MapYardContract(this RouteGroupBuilder api)
     {
@@ -43,7 +43,8 @@ public static class YardEndpoints
             var signature = request.Headers["X-Portfolio-Signature"].ToString();
             var key = configuration["Integration:YardSigningKey"] ?? "";
 
-            if (!Signature.Verify(body, key, signature))
+            var timestamp = request.Headers[Signature.TimestampHeader].ToString();
+            if (!Signature.VerifyTimestamped(body, key, signature, timestamp, clock.GetUtcNow()))
                 return Results.Unauthorized();
 
             YardIntegrationEvent? evt;

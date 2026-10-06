@@ -15,7 +15,7 @@ LTL Planner owns internal shipment planning, capacity validation, and explainabl
 
 ## Data model
 
-Orders, trucks, plans, Yard events and a per-trailer view, in one EF Core context (`api/Data`). Migrations target PostgreSQL and are applied at startup; without `DATABASE_URL` the API creates a throwaway SQLite database from the same model so the demo still runs.
+Orders, trucks, plans, Yard events and a per-trailer view, in one EF Core context (`api/Data`). Migrations target PostgreSQL and are applied by the deploy pipeline (`dotnet Portfolio.*.Api.dll migrate`, run as the schema owner over a direct connection) before the new container starts; the running app connects through the pooler as a role that can only read and write rows, and reports not-ready if the schema is behind its build. Local runs and Compose still migrate on startup (`Database:MigrateOnStartup`); without `DATABASE_URL` the API creates a throwaway SQLite database from the same model so the demo still runs.
 
 A plan stores the planner's full result (trucks, orders, explanations, unplaced orders and reasons) as a JSON snapshot. It is always read back whole, and the snapshot is what a commit is checked against.
 
@@ -34,7 +34,7 @@ A plan stores the planner's full result (trucks, orders, explanations, unplaced 
 Exposed under `/api/integrations/v1/`:
 
 - `GET yard/candidates?trailerNumber=&equipment=&maxPallets=`: open orders that fit a trailer's declared equipment and pallet capacity. Final truck/route validation stays in LTL.
-- `POST yard/events`: Yard state-change events. The raw body must carry an `X-Portfolio-Signature` HMAC-SHA256 header computed with the shared `YARD_LTL_SIGNING_KEY`. Events are stored once, keyed by `eventId` in the database, and each accepted event updates the trailer view in the same transaction (an event older than the trailer's latest one never overwrites its status); unknown `schemaVersion` values are rejected at the edge.
+- `POST yard/events`: Yard state-change events. The request must carry `X-Portfolio-Timestamp` (unix seconds) and an `X-Portfolio-Signature` HMAC-SHA256 of `{timestamp}.{raw body}` computed with the shared `YARD_LTL_SIGNING_KEY`; timestamps more than five minutes from LTL's clock are rejected, so a captured request cannot be replayed. Events are stored once, keyed by `eventId` in the database, and each accepted event updates the trailer view in the same transaction (an event older than the trailer's latest one never overwrites its status); unknown `schemaVersion` values are rejected at the edge.
 - `GET yard/events`: the received event inbox, shown on the operations screen.
 
 ## Failure behavior
@@ -56,4 +56,4 @@ Exposed under `/api/integrations/v1/`:
      LTL .NET 10 Container
 ```
 
-All state lives in PostgreSQL, so nothing is lost when the container sleeps after 10 minutes without traffic.
+All state lives in PostgreSQL, so nothing is lost when the container sleeps after 10 minutes without traffic. During weekday business hours a cron pings `/health/ready` every five minutes to keep the container and the Neon compute warm.

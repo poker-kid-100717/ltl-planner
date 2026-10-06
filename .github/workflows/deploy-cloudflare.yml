@@ -41,7 +41,12 @@ jobs:
         with:
           node-version-file: .nvmrc
 
-      - name: Build, deploy, and smoke test
+      - uses: actions/setup-dotnet@v6
+        if: steps.config.outputs.ready == 'true'
+        with:
+          global-json-file: global.json
+
+      - name: Migrate, build, deploy, and smoke test
         if: steps.config.outputs.ready == 'true'
         run: bash scripts/cloudflare-deploy.sh
         env:
@@ -50,6 +55,7 @@ jobs:
           APP_HOST: ${{ inputs.host || vars.APP_HOST }}
           YARD_LTL_SIGNING_KEY: ${{ secrets.YARD_LTL_SIGNING_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
           DEMO_RESET_TOKEN: ${{ secrets.DEMO_RESET_TOKEN }}
           ALVYS_CLIENT_ID: ${{ secrets.ALVYS_CLIENT_ID }}
           ALVYS_CLIENT_SECRET: ${{ secrets.ALVYS_CLIENT_SECRET }}

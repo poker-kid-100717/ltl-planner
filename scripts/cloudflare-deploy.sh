@@ -7,10 +7,13 @@
 #   APP_HOST              custom hostname (for example ltl.example.com). When empty the
 #                         Worker is served from its workers.dev URL only.
 #   YARD_LTL_SIGNING_KEY  shared HMAC key; must match the Yard Ops deployment.
-#   DATABASE_URL          PostgreSQL URL (for example a Neon pooled URL with sslmode=require). When
-#                         empty the API runs on a throwaway demo database that resets on restart.
+#   DATABASE_URL          PostgreSQL URL the running app uses (for example a Neon pooled URL with
+#                         sslmode=require, ideally for a least-privilege app role). When empty the
+#                         API runs on a throwaway demo database that resets on restart.
+#   DATABASE_URL_UNPOOLED Owner (direct, non-pooled) URL. When set, migrations are applied here before
+#                         the new container starts and the app no longer migrates on startup.
 #   DEMO_RESET_TOKEN      enables the daily demo-data reset (and POST /api/admin/reset-demo).
-#                         A per-deployment key is generated when empty.
+#                         A per-deployment key is generated when empty, so the reset always runs.
 #   ALVYS_CLIENT_ID / ALVYS_CLIENT_SECRET  enable live, read-only Alvys mode.
 #   VALIDATE_ONLY=true    build and run `wrangler deploy --dry-run` without contacting Cloudflare.
 set -euo pipefail
@@ -31,6 +34,23 @@ if [ -z "${YARD_LTL_SIGNING_KEY:-}" ]; then
 fi
 export YARD_LTL_SIGNING_KEY APP_HOST
 
+if [ -z "${DEMO_RESET_TOKEN:-}" ]; then
+  # The public demo always resets nightly; the token only has to be shared by the Worker and the API.
+  DEMO_RESET_TOKEN="$(openssl rand -hex 32)"
+fi
+export DEMO_RESET_TOKEN
+
+# Migrations run here, as the owner, so the running app can use a role without DDL rights.
+if [ -n "${DATABASE_URL_UNPOOLED:-}" ]; then
+  MIGRATE_ON_STARTUP=false
+else
+  MIGRATE_ON_STARTUP=true
+  if [ -n "${DATABASE_URL:-}" ]; then
+    echo "::notice::DATABASE_URL_UNPOOLED is not set; the API will apply migrations itself on startup."
+  fi
+fi
+export MIGRATE_ON_STARTUP
+
 echo "==> Building Angular app"
 npm install --prefix "$ROOT/web"
 npm run build --prefix "$ROOT/web"
@@ -45,6 +65,7 @@ const config = JSON.parse(fs.readFileSync(template, "utf8"));
 if (process.env.APP_HOST) {
   config.routes = [{ pattern: process.env.APP_HOST, custom_domain: true }];
 }
+config.vars = { ...(config.vars || {}), MIGRATE_ON_STARTUP: process.env.MIGRATE_ON_STARTUP };
 fs.writeFileSync(output, JSON.stringify(config, null, 2) + "\n");
 NODE
 
@@ -65,6 +86,11 @@ if (process.env.ALVYS_CLIENT_ID && process.env.ALVYS_CLIENT_SECRET) {
 }
 process.stdout.write(JSON.stringify(secrets));
 NODE
+
+if [ "$MIGRATE_ON_STARTUP" = "false" ] && [ "$VALIDATE_ONLY" != "true" ]; then
+  echo "==> Applying database migrations"
+  ConnectionStrings__Default="$DATABASE_URL_UNPOOLED" dotnet run --project "$ROOT/api" -c Release --no-launch-profile -- migrate
+fi
 
 cd "$CF"
 if [ "$VALIDATE_ONLY" = "true" ]; then

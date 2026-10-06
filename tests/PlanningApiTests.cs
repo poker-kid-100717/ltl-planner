@@ -143,13 +143,15 @@ public sealed class YardContractTests(ApiFactory factory) : ApiTest(factory)
     private static string Event(Guid id, string type = "TrailerReadyForPlanning", string trailer = "TRL-4207", int schemaVersion = 1, DateTimeOffset? at = null) =>
         JsonSerializer.Serialize(new { eventId = id, eventType = type, trailerNumber = trailer, occurredAt = at ?? DateTimeOffset.UtcNow, details = "Inspection passed.", schemaVersion });
 
-    private Task<HttpResponseMessage> Send(string body, string? signature = null)
+    private Task<HttpResponseMessage> Send(string body, string? signature = null, DateTimeOffset? signedAt = null, bool withTimestamp = true)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, "/api/integrations/v1/yard/events")
         {
             Content = new StringContent(body, Encoding.UTF8, "application/json")
         };
-        request.Headers.Add("X-Portfolio-Signature", signature ?? Signature.Create(body, ApiFactory.SigningKey));
+        var timestamp = (signedAt ?? DateTimeOffset.UtcNow).ToUnixTimeSeconds();
+        if (withTimestamp) request.Headers.Add(Signature.TimestampHeader, timestamp.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        request.Headers.Add("X-Portfolio-Signature", signature ?? Signature.CreateTimestamped(timestamp, body, ApiFactory.SigningKey));
         return Client.SendAsync(request);
     }
 
@@ -212,6 +214,17 @@ public sealed class YardContractTests(ApiFactory factory) : ApiTest(factory)
     }
 
     [Fact]
+    public async Task StaleOrUntimestampedEventsAreRejected()
+    {
+        var body = Event(Guid.NewGuid());
+        Assert.Equal(HttpStatusCode.Unauthorized, (await Send(body, signedAt: DateTimeOffset.UtcNow.AddMinutes(-10))).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await Send(body, signedAt: DateTimeOffset.UtcNow.AddMinutes(10))).StatusCode);
+        // The pre-timestamp form (signature over the body alone) is no longer accepted.
+        Assert.Equal(HttpStatusCode.Unauthorized, (await Send(body, Signature.Create(body, ApiFactory.SigningKey), withTimestamp: false)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await Send(body, signedAt: DateTimeOffset.UtcNow.AddMinutes(-4))).StatusCode);
+    }
+
+    [Fact]
     public async Task UnknownSchemaVersionsAndMissingFieldsAreRejected()
     {
         var v2 = await Send(Event(Guid.NewGuid(), schemaVersion: 2));
@@ -243,7 +256,9 @@ public sealed class RateLimitTests(RateLimitedFactory factory) : IClassFixture<R
         // Signed service-to-service calls are not counted against the demo limit.
         var body = JsonSerializer.Serialize(new { eventId = Guid.NewGuid(), eventType = "TrailerGateIn", trailerNumber = "TRL-1", occurredAt = DateTimeOffset.UtcNow, schemaVersion = 1 });
         var request = new HttpRequestMessage(HttpMethod.Post, "/api/integrations/v1/yard/events") { Content = new StringContent(body, Encoding.UTF8, "application/json") };
-        request.Headers.Add("X-Portfolio-Signature", Signature.Create(body, ApiFactory.SigningKey));
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        request.Headers.Add(Signature.TimestampHeader, timestamp.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        request.Headers.Add("X-Portfolio-Signature", Signature.CreateTimestamped(timestamp, body, ApiFactory.SigningKey));
         Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(request)).StatusCode);
     }
 }

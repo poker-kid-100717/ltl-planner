@@ -86,7 +86,40 @@ public static class Database
     }
 
     /// <summary>
-    /// Brings the schema up to date and seeds demo data into an empty database. Never throws:
+    /// Applies pending migrations and exits: the deploy pipeline runs this with the owner (unpooled)
+    /// connection before the new container starts, so the running app never needs DDL rights.
+    /// Returns false when there is no PostgreSQL connection or the migration fails.
+    /// </summary>
+    public static async Task<bool> MigrateAsync(IServiceProvider services, CancellationToken ct = default)
+    {
+        using var scope = services.CreateScope();
+        var status = scope.ServiceProvider.GetRequiredService<DatabaseStatus>();
+        var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Database");
+        if (!status.Persistent)
+        {
+            logger.LogError("migrate needs a PostgreSQL connection (ConnectionStrings:Default or DATABASE_URL).");
+            return false;
+        }
+
+        var db = scope.ServiceProvider.GetRequiredService<LtlDbContext>();
+        try
+        {
+            var pending = (await db.Database.GetPendingMigrationsAsync(ct)).ToList();
+            await db.Database.MigrateAsync(ct);
+            logger.LogInformation("Applied {Count} migration(s): {Migrations}", pending.Count,
+                pending.Count == 0 ? "none pending" : string.Join(", ", pending));
+            return true;
+        }
+        catch (Exception ex) when (ex is DbException or InvalidOperationException or TimeoutException)
+        {
+            logger.LogError(ex, "Migration failed.");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Brings the schema up to date (or, when Database:MigrateOnStartup is false, checks that the deploy
+    /// pipeline already did) and seeds demo data into an empty database. Never throws:
     /// if the database is unreachable the API still starts, /health/ready reports why, and
     /// data endpoints answer 503.
     /// </summary>
@@ -97,12 +130,25 @@ public static class Database
         var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Database");
         var db = scope.ServiceProvider.GetRequiredService<LtlDbContext>();
         var seeder = scope.ServiceProvider.GetRequiredService<DemoSeeder>();
+        var migrateOnStartup = scope.ServiceProvider.GetRequiredService<IConfiguration>().GetValue("Database:MigrateOnStartup", true);
 
         try
         {
-            if (status.Persistent)
+            if (status.Persistent && migrateOnStartup)
             {
                 await db.Database.MigrateAsync(ct);
+            }
+            else if (status.Persistent)
+            {
+                // Production runs as a least-privilege role: migrations belong to the deploy pipeline.
+                var pending = (await db.Database.GetPendingMigrationsAsync(ct)).ToList();
+                if (pending.Count > 0)
+                {
+                    status.Ready = false;
+                    status.Error = "The database schema is behind this build; run the migration step.";
+                    logger.LogError("Pending migrations with MigrateOnStartup disabled: {Migrations}", string.Join(", ", pending));
+                    return;
+                }
             }
             else
             {
