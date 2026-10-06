@@ -10,6 +10,8 @@ public sealed class DatabaseStatus
     public required string Mode { get; init; }
     public bool Ready { get; set; }
     public string? Error { get; set; }
+    /// <summary>The configured connection string could not be parsed; the API runs but never connects.</summary>
+    public bool Misconfigured { get; init; }
     public bool Persistent => Mode == Database.PostgresMode;
 }
 
@@ -29,7 +31,23 @@ public static class Database
 
         if (!string.IsNullOrWhiteSpace(configured))
         {
-            var connectionString = ToNpgsql(configured);
+            // A malformed value (for example a pasted `psql '...'` snippet) must not crash the process:
+            // the API still starts, /health stays up, and /health/ready says what is wrong.
+            string connectionString;
+            try
+            {
+                connectionString = new NpgsqlConnectionStringBuilder(ToNpgsql(configured)).ConnectionString;
+            }
+            catch (Exception ex) when (ex is UriFormatException or ArgumentException or FormatException or KeyNotFoundException)
+            {
+                services.AddDbContext<LtlDbContext>(o => o.UseNpgsql("Host=invalid.invalid"));
+                return Register(services, new DatabaseStatus
+                {
+                    Mode = PostgresMode,
+                    Misconfigured = true,
+                    Error = "DATABASE_URL is not a valid PostgreSQL connection string (expected postgresql://user:password@host/db?sslmode=require)."
+                });
+            }
             // No retrying execution strategy: several writes use explicit transactions.
             services.AddDbContext<LtlDbContext>(o => o.UseNpgsql(connectionString));
             return Register(services, new DatabaseStatus { Mode = PostgresMode });
@@ -100,6 +118,11 @@ public static class Database
             logger.LogError("migrate needs a PostgreSQL connection (ConnectionStrings:Default or DATABASE_URL).");
             return false;
         }
+        if (status.Misconfigured)
+        {
+            logger.LogError("{Error}", status.Error);
+            return false;
+        }
 
         var db = scope.ServiceProvider.GetRequiredService<LtlDbContext>();
         try
@@ -131,6 +154,12 @@ public static class Database
         var db = scope.ServiceProvider.GetRequiredService<LtlDbContext>();
         var seeder = scope.ServiceProvider.GetRequiredService<DemoSeeder>();
         var migrateOnStartup = scope.ServiceProvider.GetRequiredService<IConfiguration>().GetValue("Database:MigrateOnStartup", true);
+        if (status.Misconfigured)
+        {
+            status.Ready = false;
+            logger.LogError("{Error}", status.Error);
+            return;
+        }
 
         try
         {
