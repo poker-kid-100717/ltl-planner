@@ -4,6 +4,9 @@
   "main": "worker/index.ts",
   "compatibility_date": "2026-09-26",
   "workers_dev": true,
+  "vars": {
+    "MIGRATE_ON_STARTUP": "true"
+  },
   "assets": {
     "directory": "../web/dist/web/browser",
     "binding": "ASSETS",
@@ -27,6 +30,6 @@
     { "tag": "v1", "new_sqlite_classes": ["LtlApi"] }
   ],
   "secrets": { "required": ["YARD_LTL_SIGNING_KEY"] },
-  "triggers": { "crons": ["23 8 * * *"] },
+  "triggers": { "crons": ["23 8 * * *", "*/5 14-23 * * MON-FRI"] },
   "observability": { "enabled": true }
 }

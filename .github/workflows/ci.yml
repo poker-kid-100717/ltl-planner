@@ -91,4 +91,5 @@ jobs:
           APP_HOST: ltl.example.com
           YARD_LTL_SIGNING_KEY: dry-run-signing-key
           DATABASE_URL: postgres://dry-run:dry-run@example.com/ltl?sslmode=require
+          DATABASE_URL_UNPOOLED: postgres://dry-run-owner:dry-run@example.com/ltl?sslmode=require
           DEMO_RESET_TOKEN: dry-run-token
