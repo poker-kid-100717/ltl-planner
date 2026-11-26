@@ -100,6 +100,10 @@ Repository **variable** (optional):
 
 Until the Cloudflare secrets exist the deploy job skips cleanly. `scripts/cloudflare-deploy.sh` can also be run locally with the same environment variables.
 
+## Demo hub (all three apps)
+
+`demo/` is a static Cloudflare Worker that walks through the combined workflow: [freight-ops](https://github.com/poker-kid-100717/freight-ops) (quote won) → LTL Planner (order, plan, dispatch) → [yard-ops](https://github.com/poker-kid-100717/yard-ops) (gate, dock, inspect, depart, signed events back to LTL). `.github/workflows/deploy-demo-hub.yml` deploys it with the same Cloudflare secrets. Set repository variables `FREIGHT_OPS_URL`, `LTL_PLANNER_URL` and `YARD_OPS_URL` to the deployed app URLs. For Yard events to verify, use the same `YARD_LTL_SIGNING_KEY` secret in the ltl-planner and yard-ops repos.
+
 ## Repository structure
 
 ```text

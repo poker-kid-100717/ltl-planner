@@ -1,0 +1,54 @@
+name: deploy-demo-hub
+
+on:
+  push:
+    branches: [main]
+    paths: ["demo/**", ".github/workflows/deploy-demo-hub.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: demo-hub-cloudflare
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check deploy secrets
+        id: config
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::notice::Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID as repository secrets to enable deployment."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v7
+        if: steps.config.outputs.ready == 'true'
+        with:
+          node-version-file: .nvmrc
+
+      - name: Write app URLs and deploy
+        if: steps.config.outputs.ready == 'true'
+        working-directory: demo
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          FREIGHT_URL: ${{ vars.FREIGHT_OPS_URL }}
+          LTL_URL: ${{ vars.LTL_PLANNER_URL }}
+          YARD_URL: ${{ vars.YARD_OPS_URL }}
+        run: |
+          # Repository variables hold each app's deployed URL (https://<worker>.<account>.workers.dev or a custom domain).
+          cat > public/config.js <<EOF
+          window.DEMO_URLS = { freight: "${FREIGHT_URL}", ltl: "${LTL_URL}", yard: "${YARD_URL}" };
+          EOF
+          npx --yes wrangler@4 deploy
