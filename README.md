@@ -121,4 +121,6 @@ Written from generic workflow requirements and public vendor documentation. It c
 
 ## License
 
-MIT
+Copyright (c) 2026 Joshua Davis. All rights reserved. See [LICENSE](LICENSE).
+
+Previously granted MIT license rights remain unaffected. Third-party components retain their respective licenses and notices.
