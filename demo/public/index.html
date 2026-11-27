@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Freight Ops · LTL Planner · Yard Ops — live demo workflow</title>
+<title>Carrier Operations Suite | Freight sales, load planning and yard operations</title>
 <style>
   :root { --bg:#f6f7f9; --card:#fff; --ink:#1b2430; --mute:#5b6675; --line:#dde2e9; --f:#1f7a5a; --l:#2457c5; --y:#b4580b; }
   @media (prefers-color-scheme: dark) { :root { --bg:#12171e; --card:#1a212b; --ink:#e8edf3; --mute:#9aa6b5; --line:#2a3340; } }
@@ -30,44 +30,45 @@
 </head>
 <body>
 <main>
-  <h1>One freight, three apps</h1>
-  <p class="lead">Three clean-room apps cover one shipment's life: the customer deal (Freight Ops), the truck plan (LTL Planner), and the trailer at the gate and dock (Yard Ops). All data is fictional and resets nightly. Each app also runs on its own.</p>
+  <h1>Carrier Operations Suite</h1>
+  <p class="lead">Freight sales, load planning and yard operations for LTL carriers. Follow a fictional six-pallet shipment from the accepted quote to trailer departure.</p>
+  <p><strong>$3,650 for the suite</strong> · Open to offers · Pre-revenue MVP</p>
 
   <div class="flow">
     <section class="card f" aria-labelledby="f">
-      <h3 id="f">1 · Freight Ops</h3><p class="role">Sales CRM — the customer side</p>
+      <h3 id="f">1 · FreightDesk</h3><p class="role">Sales CRM — the customer side</p>
       <ol>
         <li>Work the <b>Dashboard</b> / <b>My Day</b>: accounts ranked by an explainable priority score.</li>
         <li>Qualify a <b>Lead</b> and convert it to an account + contact.</li>
         <li>Quote a <b>Lane</b> → quote moves Draft → Sent → Won.</li>
         <li>First won quote turns the prospect <b>Active</b>.</li>
       </ol>
-      <a class="btn" data-app="freight" href="#">Open Freight Ops</a>
+      <a class="btn" data-app="freight" href="#">Open FreightDesk</a>
     </section>
     <section class="card l" aria-labelledby="l">
-      <h3 id="l">2 · LTL Planner</h3><p class="role">Dispatch planning — the truck side</p>
+      <h3 id="l">2 · Pallet Planner</h3><p class="role">Dispatch planning — the truck side</p>
       <ol>
-        <li>Won freight becomes an <b>Order</b> (pallets, weight, equipment).</li>
+        <li>Manually enter the won shipment as an <b>Order</b> with six pallets, its weight and its equipment requirement.</li>
         <li>In <b>Plan Builder</b>, pick orders + trucks and build a draft.</li>
         <li>Review the explanation: hard constraints first, a reason for every unplaced order.</li>
         <li><b>Commit</b> (atomic; 409 if anything changed) then <b>Dispatch</b>.</li>
       </ol>
-      <a class="btn" data-app="ltl" href="#">Open LTL Planner</a>
+      <a class="btn" data-app="ltl" href="#">Open Pallet Planner</a>
     </section>
     <section class="card y" aria-labelledby="y">
-      <h3 id="y">3 · Yard Ops</h3><p class="role">Yard execution — the trailer side</p>
+      <h3 id="y">3 · Yard Board</h3><p class="role">Yard execution — the trailer side</p>
       <ol>
         <li><b>Gate</b>: pre-advise, then check the trailer in.</li>
         <li>Assign a spot or dock door on the <b>Yard Board</b>.</li>
         <li>Load, run the <b>Inspection</b> checklist; failures place a hold.</li>
         <li>Mark Ready → Departed; each step is queued in the <b>LTL Outbox</b>.</li>
       </ol>
-      <a class="btn" data-app="yard" href="#">Open Yard Ops</a>
+      <a class="btn" data-app="yard" href="#">Open Yard Board</a>
     </section>
   </div>
-  <div class="arrows" aria-hidden="true"><div>quote won → order demand ➜</div><div>◀ trailer candidates (sync lookup) · ➜ plan on truck</div><div>signed events ➜ LTL Yard Feed</div></div>
+  <div class="arrows" aria-hidden="true"><div>Accepted quote → manual order entry</div><div>◀ trailer candidates (sync lookup) · ➜ plan on truck</div><div>signed events ➜ LTL Yard Feed</div></div>
 
-  <h2>Integration: Yard Ops ⇄ LTL Planner</h2>
+  <h2>How yard updates reach dispatch</h2>
   <table>
     <tr><th>Direction</th><th>What</th><th>How</th></tr>
     <tr><td>LTL → Yard</td><td>Trailer candidates for a planned load</td><td><code>GET /api/integrations/v1/yard/candidates</code>, shown on the Yard trailer detail page</td></tr>
@@ -77,12 +78,12 @@
 
   <h2>Five-minute guided tour</h2>
   <ol>
-    <li><b>Freight Ops → Leads</b>: convert a qualified lead, open the new account, quote a lane, mark the quote Won.</li>
-    <li><b>LTL Planner → Orders</b>: create an order for that freight, then <b>Plan Builder</b>: build a draft and read why each order lands where it does or is left out. Commit, then dispatch.</li>
-    <li><b>Yard Ops → Gate</b>: check in a trailer, move it to a door, run its inspection to Ready, and depart it.</li>
-    <li><b>Yard Ops → LTL Outbox</b>, then <b>LTL Planner → Yard Feed</b>: the same events, delivered and verified.</li>
+    <li><b>FreightDesk → Leads</b>: convert a qualified lead, open the new account, quote a lane, mark the quote Won.</li>
+    <li><b>Pallet Planner → Orders</b>: manually create the six-pallet order, then <b>Plan Builder</b>: build a draft and read why each order lands where it does or is left out. Commit, then dispatch.</li>
+    <li><b>Yard Board → Gate</b>: check in a trailer, move it to a door, run its inspection to Ready, and depart it.</li>
+    <li><b>Yard Board → LTL Outbox</b>, then <b>Pallet Planner → Yard Feed</b>: the same events, delivered and verified.</li>
   </ol>
-  <p class="note">Public demo: writes are rate-limited and data resets daily at 08:23 UTC. The first request after idle may take a few seconds while the container wakes. Yard → LTL delivery only verifies when both apps share the same <code>YARD_LTL_SIGNING_KEY</code>.</p>
+  <p class="note">The demo modules currently open under their original names: Freight Ops, LTL Planner and Yard Ops. Demo writes are rate-limited and data resets daily at 08:23 UTC. The first request after idle may take a few seconds while the container wakes. Yard → LTL delivery only verifies when both apps share the same <code>YARD_LTL_SIGNING_KEY</code>.</p>
 </main>
 <script src="config.js"></script>
 <script>
